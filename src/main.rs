@@ -94,6 +94,8 @@ impl eframe::App for CanvasApp {
         // Wymuszamy ciągłe przerysowywanie (repaint), aby punkty znikały na bieżąco
         ui.request_repaint();
 
+        // Zmienna, w której zapiszemy tekst statusu kursora
+        let mut cursor_status = "Kursor poza płótnem".to_string();
 
         ui.horizontal(|ui| {
             ui.heading("Parametry");
@@ -149,6 +151,22 @@ impl eframe::App for CanvasApp {
 
             // Tło płótna
             painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(30, 36, 30));
+
+            // Położenie wskaźnika myszy
+            if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
+                if rect.contains(mouse_pos) {
+                    // Pobieramy pozycję myszy względem lewego górnego rogu płótna (0..800)
+                    let local_x = mouse_pos.x - rect.min.x;
+                    let local_y = mouse_pos.y - rect.min.y;
+
+                    // Odwrotne mapowanie na wartości matematyczne [-500, 500]
+                    let mat_x = (local_x / 0.8) - 500.0;
+                    let mat_y = 500.0 - (local_y / 0.8);
+
+                    // Formatujemy tekst do wyświetlenia (zaokrąglamy do liczb całkowitych)
+                    cursor_status = format!("(X,Y): {:.0},{:.0}", mat_x, mat_y);
+                }
+            }
 
             // Osie X i Y krzyżujące się na środku (0,0)
             /*let center_x = rect.min.x + 400.0;
@@ -285,8 +303,6 @@ impl eframe::App for CanvasApp {
                     painter.circle_filled(global_pos, 5.0, point_color);
                 }
             }
-
-
         });
 
         ui.separator();
@@ -297,6 +313,7 @@ impl eframe::App for CanvasApp {
             // Licznik
             ui.label(format!("Liczba: {}", self.points.len()));
             ui.separator();
+            ui.label(egui::RichText::new(cursor_status).monospace().strong());
         });
     }
 }
