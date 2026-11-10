@@ -8,8 +8,8 @@ use std::thread;
 struct CanvasApp {
     // Kanał do odbierania współrzędnych z wątku UDP
     rx: Receiver<(f32, f32)>,
-    // Lista punktów do narysowania na ekranie
-    points: Vec<egui::Pos2>,
+    // Lista punktów do narysowania na ekranie z czasem odebrania
+    points: Vec<(egui::Pos2, std::time::Instant)>,
     // Pola sterujące widocznością siatki i okręgów
     show_grid: bool,
     show_circles: bool,
@@ -81,10 +81,17 @@ impl CanvasApp {
 impl eframe::App for CanvasApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 
-        // Odbieramy wszystkie nowe punkty, które przyszły przez UDP od ostatniej klatki
+        // Odbieramy nowe punkty i zapisujemy je wraz z aktualnym czasem
         while let Ok((x, y)) = self.rx.try_recv() {
-            self.points.push(egui::pos2(x, y));
+            self.points.push((egui::pos2(x, y), std::time::Instant::now()));
         }
+
+        // Automatyczne usuwanie punktów starszych
+        self.points.retain(|(_, timestamp)| timestamp.elapsed() < std::time::Duration::from_secs(10));
+
+        // Wymuszamy ciągłe przerysowywanie (repaint), aby punkty znikały na bieżąco
+        ui.request_repaint();
+
 
         ui.horizontal(|ui| {
             ui.heading("Parametry");
@@ -209,7 +216,7 @@ impl eframe::App for CanvasApp {
             );
 
             // Rysowanie i skalowanie punktów wykryć
-            for point in &self.points {
+            /*for point in &self.points {
                 // Matematyczne przesunięcie i skalowanie:
                 // Zakres wejściowy x: [-500, 500] -> Mapujemy na piksele: [0, 800]
                 // piksel_x = ((x + 500) / 1000) * 800 = (x + 500) * 0.8
@@ -230,7 +237,22 @@ impl eframe::App for CanvasApp {
                         egui::Color32::from_rgb(0, 255, 150),
                     );
                 }
+            }*/
+            for (point, _) in &self.points {
+                let pixel_x = (point.x + 500.0) * 0.8;
+                let pixel_y = 800.0 - ((point.y + 500.0) * 0.8);
+                let global_pos = rect.min + egui::vec2(pixel_x, pixel_y);
+
+                if rect.contains(global_pos) {
+                    painter.circle_filled(
+                        global_pos,
+                        5.0,
+                        egui::Color32::from_rgb(0, 255, 150),
+                    );
+                }
             }
+
+
         });
 
         ui.separator();
