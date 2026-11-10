@@ -238,7 +238,7 @@ impl eframe::App for CanvasApp {
                     );
                 }
             }*/
-            for (point, _) in &self.points {
+            /*for (point, _) in &self.points {
                 let pixel_x = (point.x + 500.0) * 0.8;
                 let pixel_y = 800.0 - ((point.y + 500.0) * 0.8);
                 let global_pos = rect.min + egui::vec2(pixel_x, pixel_y);
@@ -248,6 +248,36 @@ impl eframe::App for CanvasApp {
                         global_pos,
                         5.0,
                         egui::Color32::from_rgb(0, 255, 150),
+                    );
+                }
+            }*/
+            // Blednięcie
+            for (point, timestamp) in &self.points {
+                // Obliczamy ile sekund żyje już ten punkt
+                let elapsed_secs = timestamp.elapsed().as_secs_f32();
+                
+                // Obliczamy współczynnik życia: 1.0 (nowy) do 0.0 (do usunięcia)
+                let life_factor = (10.0_f32 - elapsed_secs).max(0.0_f32) / 10.0_f32;
+                
+                // W egui 0.33 najbezpieczniej pomnożyć składowe koloru przez współczynnik life_factor
+                // Używamy from_rgba_premultiplied, ponieważ egui oczekuje kolorów z przemnożonym kanałem alpha
+                let r = (0.0 * life_factor) as u8;
+                let g = (255.0 * life_factor) as u8;
+                let b = (150.0 * life_factor) as u8;
+                let a = (255.0 * life_factor) as u8;
+                
+                let point_color = egui::Color32::from_rgba_premultiplied(r, g, b, a);
+
+                // Mapowanie współrzędnych matematycznych na piksele
+                let pixel_x = (point.x + 500.0) * 0.8;
+                let pixel_y = 800.0 - ((point.y + 500.0) * 0.8);
+                let global_pos = rect.min + egui::vec2(pixel_x, pixel_y);
+
+                if rect.contains(global_pos) {
+                    painter.circle_filled(
+                        global_pos,
+                        5.0,
+                        point_color,
                     );
                 }
             }
