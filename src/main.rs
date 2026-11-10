@@ -13,7 +13,8 @@ struct CanvasApp {
     // Pola sterujące widocznością siatki i okręgów
     show_grid: bool,
     show_circles: bool,
-
+    // Czas życia punktów w sekundach
+    max_age_secs: f32,
 }
 
 impl CanvasApp {
@@ -73,6 +74,7 @@ impl CanvasApp {
             points: Vec::new(),
             show_grid: true,    // Domyślnie włączone
             show_circles: true, // Domyślnie włączone
+            max_age_secs: 10.0, // Domyślnie 10 sekund
         }
     }
 }
@@ -100,6 +102,11 @@ impl eframe::App for CanvasApp {
             // Checkboxy do włączania/wyłączania elementów siatki
             ui.checkbox(&mut self.show_grid, "Siatka");
             ui.checkbox(&mut self.show_circles, "Okręgi");
+            ui.separator();
+
+            // Suwak do regulacji czasu (zakres od 1 do 100 sekund)
+            ui.label("Czas życia:");
+            ui.add(egui::Slider::new(&mut self.max_age_secs, 1.0..=100.0).suffix("s"));
             ui.separator();
 
             // Przycisk czyszczenia
@@ -252,15 +259,17 @@ impl eframe::App for CanvasApp {
                 }
             }*/
             // Blednięcie
+            // Rysowanie punktów z użyciem dynamicznego czasu max_age_secs
             for (point, timestamp) in &self.points {
-                // Obliczamy ile sekund żyje już ten punkt
                 let elapsed_secs = timestamp.elapsed().as_secs_f32();
                 
-                // Obliczamy współczynnik życia: 1.0 (nowy) do 0.0 (do usunięcia)
-                let life_factor = (10.0_f32 - elapsed_secs).max(0.0_f32) / 10.0_f32;
+                // Bezpieczne zapobieganie dzieleniu przez zero i wyliczenie współczynnika na bazie suwaka
+                let life_factor = if self.max_age_secs > 0.0 {
+                    (self.max_age_secs - elapsed_secs).max(0.0_f32) / self.max_age_secs
+                } else {
+                    0.0
+                };
                 
-                // W egui 0.33 najbezpieczniej pomnożyć składowe koloru przez współczynnik life_factor
-                // Używamy from_rgba_premultiplied, ponieważ egui oczekuje kolorów z przemnożonym kanałem alpha
                 let r = (0.0 * life_factor) as u8;
                 let g = (255.0 * life_factor) as u8;
                 let b = (150.0 * life_factor) as u8;
@@ -268,17 +277,12 @@ impl eframe::App for CanvasApp {
                 
                 let point_color = egui::Color32::from_rgba_premultiplied(r, g, b, a);
 
-                // Mapowanie współrzędnych matematycznych na piksele
                 let pixel_x = (point.x + 500.0) * 0.8;
                 let pixel_y = 800.0 - ((point.y + 500.0) * 0.8);
                 let global_pos = rect.min + egui::vec2(pixel_x, pixel_y);
 
                 if rect.contains(global_pos) {
-                    painter.circle_filled(
-                        global_pos,
-                        5.0,
-                        point_color,
-                    );
+                    painter.circle_filled(global_pos, 5.0, point_color);
                 }
             }
 
