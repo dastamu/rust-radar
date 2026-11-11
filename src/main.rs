@@ -377,6 +377,11 @@ impl eframe::App for CanvasApp {
                     axis_thin,
                 );*/
 
+                // Martwy stożek
+                //let fill_color = egui::Color32::from_rgb(220, 50, 50);
+                // Na środku rysujemy okrąg wypełniony kolorem
+                painter.circle_filled(center_pos, 10.*scale, egui::Color32::from_rgb(30, 36, 30));
+
                 // ---- ETYKIETY LICZBOWE NA OSIACH (CO 5. KROK) ----
                 if self.show_grid || self.show_circles {
                     // Etykiety wzdłuż osi X
