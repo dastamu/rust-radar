@@ -182,12 +182,15 @@ impl eframe::App for CanvasApp {
                 let minor_stroke = egui::Stroke::new(0.50_f32, egui::Color32::from_rgb(45, 52, 45));
                 // Wyróżniona linia siatki co 5. krok (ja minimalnie grubsza i wyraźniejsza)
                 let major_stroke = egui::Stroke::new(0.75_f32, egui::Color32::from_rgb(75, 88, 75));
+                // Etykiety
+                let label_color = egui::Color32::from_rgb(140, 155, 140);
+                let label_font = egui::FontId::monospace(10.0);
+                // Krok
+                let steps_x = (max_math_x / self.range_step).floor() as i32;
+                let steps_y = (max_math_y / self.range_step).floor() as i32;
 
                 // Rysowanie siatki 
                 if self.show_grid {
-                    // Wyznaczamy ile pełnych "setek" zmieści się w poziomie i w pionie
-                    let steps_x = (max_math_x / self.range_step).floor() as i32;
-                    let steps_y = (max_math_y / self.range_step).floor() as i32;
 
                     // Pionowe linie siatki (od -steps_x*100 do +steps_x*100)
                     for i in -steps_x..=steps_x {
@@ -252,6 +255,39 @@ impl eframe::App for CanvasApp {
                     [egui::pos2(rect.min.x, rect.max.y), egui::pos2(rect.max.x, rect.min.y)],
                     axis_thin,
                 );*/
+
+                // ---- ETYKIETY LICZBOWE NA OSIACH (CO 5. KROK) ----
+                if self.show_grid || self.show_circles {
+                    // Etykiety wzdłuż osi X
+                    for i in -steps_x..=steps_x {
+                        if i == 0 || i % 5 != 0 { continue; }
+                        let val = i as f32 * self.range_step;
+                        let px_x = center_pos.x + (val * scale);
+                        
+                        painter.text(
+                            egui::pos2(px_x, center_pos.y + 4.0),
+                            egui::Align2::CENTER_TOP,
+                            format!("{:.0}", val),
+                            label_font.clone(),
+                            label_color,
+                        );
+                    }
+
+                    // Etykiety wzdłuż osi Y
+                    for i in -steps_y..=steps_y {
+                        if i == 0 || i % 5 != 0 { continue; }
+                        let val = i as f32 * self.range_step;
+                        let px_y = center_pos.y - (val * scale);
+                        
+                        painter.text(
+                            egui::pos2(center_pos.x + 5.0, px_y),
+                            egui::Align2::LEFT_CENTER,
+                            format!("{:.0}", val),
+                            label_font.clone(),
+                            label_color,
+                        );
+                    }
+                }
 
                 // Rysowanie i skalowanie punktów wykryć + blednięcie
                 // Rysowanie punktów z użyciem dynamicznego czasu max_age_secs
