@@ -10,11 +10,14 @@ use std::time::{Instant};
 struct CanvasApp {
     // Kanał do odbierania współrzędnych z wątku UDP
     rx: Receiver<(f32, f32)>,
-    // Lista punktów do narysowania na ekranie z czasem odebrania
-    points: Vec<(egui::Pos2, std::time::Instant)>,
+    // Przechowujemy: (numer_punktu, pozycja, czas_odebrania)
+    points: Vec<(u64, egui::Pos2, std::time::Instant)>,
+    next_point_id: u64,
     // Pola sterujące widocznością siatki i okręgów
     show_grid: bool,
     show_circles: bool,
+    // Etykiety punktów
+    show_labels: bool,
     // Czas życia punktów w sekundach
     max_age_secs: f32,
     // Krok siatki i okręgów
@@ -76,10 +79,12 @@ impl CanvasApp {
         Self {
             rx,
             points: Vec::new(),
+            next_point_id: 1,   // Zaczynamy numerację od 1
             show_grid: true,    // Domyślnie włączone
             show_circles: true, // Domyślnie włączone
+            show_labels: false, // Domyślnie etykiety są niewidoczne
             max_age_secs: 10.0, // Domyślnie 10 sekund
-            range_step: 100.0,  // Domyślnie 100
+            range_step: 20.0,   // Domyślnie
         }
     }
 }
@@ -91,11 +96,14 @@ impl eframe::App for CanvasApp {
 
         // Odbieramy nowe punkty i zapisujemy je wraz z aktualnym czasem
         while let Ok((x, y)) = self.rx.try_recv() {
-            self.points.push((egui::pos2(x, y), std::time::Instant::now()));
+            self.points.push((self.next_point_id, egui::pos2(x, y), std::time::Instant::now()));
+            self.next_point_id += 1;
         }
 
         // Automatyczne usuwanie punktów starszych
-        self.points.retain(|(_, timestamp)| timestamp.elapsed() < std::time::Duration::from_secs(10));
+        self.points.retain(|(_, _, timestamp)| {
+            timestamp.elapsed() < std::time::Duration::from_secs_f32(self.max_age_secs)
+        });
 
         // Wymuszamy ciągłe przerysowywanie (repaint), aby punkty znikały na bieżąco
         ui.request_repaint();
@@ -114,6 +122,7 @@ impl eframe::App for CanvasApp {
             // Checkboxy do włączania/wyłączania elementów siatki
             ui.checkbox(&mut self.show_grid, "Siatka");
             ui.checkbox(&mut self.show_circles, "Okręgi");
+            ui.checkbox(&mut self.show_labels, "Etykiety");
             ui.separator();
 
             // Suwak do regulacji czasu (zakres od 1 do 100 sekund)
@@ -150,14 +159,14 @@ impl eframe::App for CanvasApp {
         // Kanwa wypełnia teraz cały prostokątny obszar
         let desired_size = egui::vec2(available_w, available_h);
 
-        // Wspólną skalę (piksele na jednostkę) wyznaczamy na podstawie MNIEJSZEGO boku
+        // Wspólną skalę (piksele na jednostkę) wyznaczamy na podstawie krótszego boku
         let min_side = available_w.min(available_h);
-        let scale = min_side / 1000.0_f32;
+        let offset = 15.0; //mały offset od brzegów kanwy
+        let scale = (min_side - offset)/ 1000.0_f32;
 
         // Obliczamy maksymalny zakres jednostek matematycznych dla dłuższego boku
         let max_math_x = (available_w / 2.0) / scale;
         let max_math_y = (available_h / 2.0) / scale;
-
         
         ui.horizontal(|ui| {
             // Dodajemy 5 pikseli pustej przestrzeni z lewej strony
@@ -176,6 +185,9 @@ impl eframe::App for CanvasApp {
                 //let center_pos = rect.min + egui::vec2(400.0, 400.0);
                 // Dokładny geometryczny środek prostokątnego płótna to teraz nasze (0, 0)
                 let center_pos = rect.center();
+
+                let point_font = egui::FontId::monospace(11.0);
+
                 //let grid_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 50));
 
                 // Zwykła linia siatki (subtelna)
@@ -291,7 +303,7 @@ impl eframe::App for CanvasApp {
 
                 // Rysowanie i skalowanie punktów wykryć + blednięcie
                 // Rysowanie punktów z użyciem dynamicznego czasu max_age_secs
-                for (point, timestamp) in &self.points {
+                for (id, point, timestamp) in &self.points {
                     let elapsed_secs = timestamp.elapsed().as_secs_f32();
                     
                     // Bezpieczne zapobieganie dzieleniu przez zero i wyliczenie współczynnika na bazie suwaka
@@ -301,12 +313,28 @@ impl eframe::App for CanvasApp {
                         0.0
                     };
                     
-                    // Blaknięcie
+  /*                  // Blaknięcie
                     let r = (0.0 * life_factor) as u8;
                     let g = (255.0 * life_factor) as u8;
                     let b = (150.0 * life_factor) as u8;
                     let a = (255.0 * life_factor) as u8;
                     let point_color = egui::Color32::from_rgba_premultiplied(r, g, b, a);
+*/
+                    // Kolor kropki (neonowy zielony z zanikaniem)
+                    let point_color = egui::Color32::from_rgba_premultiplied(
+                        0,
+                        (255.0 * life_factor) as u8,
+                        (150.0 * life_factor) as u8,
+                        (255.0 * life_factor) as u8,
+                    );
+
+                    // Kolor etykiety (jasny zielono-biały, zanika razem z punktem)
+                    let text_color = egui::Color32::from_rgba_premultiplied(
+                        (210.0 * life_factor) as u8,
+                        (255.0 * life_factor) as u8,
+                        (220.0 * life_factor) as u8,
+                        (255.0 * life_factor) as u8,
+                    );
 
                     // Przeliczenie względem środka ekranu
                     let global_pos = egui::pos2(
@@ -315,7 +343,19 @@ impl eframe::App for CanvasApp {
                     );
 
                     if rect.contains(global_pos) {
+                        // rysowanie punktu wykrycia
                         painter.circle_filled(global_pos, 3.0, point_color);
+
+                        // rysowanie etykiety
+                        if self.show_labels {
+                            painter.text(
+                                global_pos + egui::vec2(8.0, -6.0),
+                                egui::Align2::LEFT_BOTTOM,
+                                format!("#{} ({:.0}, {:.0})", id, point.x, point.y),
+                                point_font.clone(),
+                                text_color,
+                            );
+                        }
                     }
                 }
 
