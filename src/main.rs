@@ -4,6 +4,8 @@ use eframe::egui;
 use std::net::UdpSocket;
 use std::sync::mpsc::{channel, Receiver};
 use std::thread;
+//use std::time::{Instant, Duration};
+use std::time::{Instant};
 
 struct CanvasApp {
     // Kanał do odbierania współrzędnych z wątku UDP
@@ -82,6 +84,7 @@ impl CanvasApp {
 // Implementacja dostosowana do eframe 0.35 (używamy metody ui zamiast update)
 impl eframe::App for CanvasApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let start = Instant::now(); //Pomiar czasu
 
         // Odbieramy nowe punkty i zapisujemy je wraz z aktualnym czasem
         while let Ok((x, y)) = self.rx.try_recv() {
@@ -124,44 +127,133 @@ impl eframe::App for CanvasApp {
 
         ui.separator();
 
-        // Tworzymy płótno (Canvas) zajmujące całą dostępną przestrzeń
-        /*egui::Frame::canvas(ui.style()).show(ui, |ui| {
-            let desired_size = ui.available_size();
-            let (response, painter) = ui.allocate_painter(desired_size, egui::Sense::hover());
-            let rect = response.rect;
+        // Pobieramy pełną dostępną szerokość i wysokość okna (zostawiając marginesy i miejsce na dolny status)
+        let available_w = (ui.available_width() - 10.0).max(100.0);
+        let available_h = (ui.available_height() - 40.0).max(100.0);
 
-            // Rysujemy tło płótna
-            painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(30, 36, 30));
+        // Kanwa wypełnia teraz cały prostokątny obszar
+        let desired_size = egui::vec2(available_w, available_h);
 
-            // Rysujemy wszystkie odebrane punkty
-            for point in &self.points {
-                // Współrzędne przeliczamy relatywnie do lewego górnego rogu płótna
-                let global_pos = rect.min + egui::vec2(point.x, point.y);
-                
-                if rect.contains(global_pos) {
-                    painter.circle_filled(
-                        global_pos, 
-                        4.0, 
-                        egui::Color32::from_rgb(0, 255, 150) // neonowy zielony
-                    );
-                }
-            }
-        });*/
+        // Wspólną skalę (piksele na jednostkę) wyznaczamy na podstawie MNIEJSZEGO boku
+        let min_side = available_w.min(available_h);
+        let scale = min_side / 1000.0_f32;
 
+        // Obliczamy maksymalny zakres jednostek matematycznych dla dłuższego boku
+        let max_math_x = (available_w / 2.0) / scale;
+        let max_math_y = (available_h / 2.0) / scale;
+
+        
         ui.horizontal(|ui| {
             // Dodajemy 5 pikseli pustej przestrzeni z lewej strony
             ui.add_space(5.0);
 
+            // Płótno
             egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                let desired_size = egui::vec2(800.0, 800.0);
+                //let desired_size = egui::vec2(800.0, 800.0);
+                //let (response, painter) = ui.allocate_painter(desired_size, egui::Sense::hover());
                 let (response, painter) = ui.allocate_painter(desired_size, egui::Sense::hover());
                 let rect = response.rect;
 
                 // Tło płótna
                 painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(30, 36, 30));
+                
+                //let center_pos = rect.min + egui::vec2(400.0, 400.0);
+                // Dokładny geometryczny środek prostokątnego płótna to teraz nasze (0, 0)
+                let center_pos = rect.center();
+                let grid_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 50));
+
+                // Rysowanie siatki 
+                if self.show_grid {
+                    // Wyznaczamy ile pełnych "setek" zmieści się w poziomie i w pionie
+                    let steps_x = (max_math_x / 100.0).floor() as i32;
+                    let steps_y = (max_math_y / 100.0).floor() as i32;
+
+                    // Pionowe linie siatki (od -steps_x*100 do +steps_x*100)
+                    for i in -steps_x..=steps_x {
+                        if i == 0 { continue; }
+                        let px_x = center_pos.x + (i as f32 * 100.0 * scale);
+                        painter.line_segment(
+                            [egui::pos2(px_x, rect.min.y), egui::pos2(px_x, rect.max.y)],
+                            grid_stroke,
+                        );
+                    }
+
+                    // Poziome linie siatki (od -steps_y*100 do +steps_y*100)
+                    for i in -steps_y..=steps_y {
+                        if i == 0 { continue; }
+                        let px_y = center_pos.y - (i as f32 * 100.0 * scale);
+                        painter.line_segment(
+                            [egui::pos2(rect.min.x, px_y), egui::pos2(rect.max.x, px_y)],
+                            grid_stroke,
+                        );
+                    }
+                }
+
+                // Rysowanie okręgów
+                if self.show_circles {
+                    // Rysujemy okręgi co 100 aż do krawędzi dłuższego boku
+                    let max_r_steps = (max_math_x.max(max_math_y) / 100.0).floor() as i32 + 2;
+                    for r in 1..=max_r_steps {
+                        let pixel_radius = (r as f32 * 100.0) * scale;
+                        painter.circle_stroke(center_pos, pixel_radius, grid_stroke);
+                    }
+                }
+
+                // Główne osie XY
+                let axis_stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(80, 80, 80));
+                // Oś X (pozioma linia środkowa)
+                painter.line_segment(
+                    [egui::pos2(rect.min.x, center_pos.y), egui::pos2(rect.max.x, center_pos.y)],
+                    axis_stroke,
+                );
+                // Oś Y (pionowa linia środkowa)
+                painter.line_segment(
+                    [egui::pos2(center_pos.x, rect.min.y), egui::pos2(center_pos.x, rect.max.y)],
+                    axis_stroke,
+                );
+                /*// Osie po skosie
+                let axis_thin = egui::Stroke::new(0.5, egui::Color32::from_rgb(80, 80, 80));
+                painter.line_segment(
+                    [egui::pos2(rect.min.x, rect.min.y), egui::pos2(rect.max.x, rect.max.y)],
+                    axis_thin,
+                );
+                painter.line_segment(
+                    [egui::pos2(rect.min.x, rect.max.y), egui::pos2(rect.max.x, rect.min.y)],
+                    axis_thin,
+                );*/
+
+                // Rysowanie i skalowanie punktów wykryć + blednięcie
+                // Rysowanie punktów z użyciem dynamicznego czasu max_age_secs
+                for (point, timestamp) in &self.points {
+                    let elapsed_secs = timestamp.elapsed().as_secs_f32();
+                    
+                    // Bezpieczne zapobieganie dzieleniu przez zero i wyliczenie współczynnika na bazie suwaka
+                    let life_factor = if self.max_age_secs > 0.0 {
+                        (self.max_age_secs - elapsed_secs).max(0.0_f32) / self.max_age_secs
+                    } else {
+                        0.0
+                    };
+                    
+                    // Blaknięcie
+                    let r = (0.0 * life_factor) as u8;
+                    let g = (255.0 * life_factor) as u8;
+                    let b = (150.0 * life_factor) as u8;
+                    let a = (255.0 * life_factor) as u8;
+                    let point_color = egui::Color32::from_rgba_premultiplied(r, g, b, a);
+
+                    // Przeliczenie względem środka ekranu
+                    let global_pos = egui::pos2(
+                        center_pos.x + (point.x * scale),
+                        center_pos.y - (point.y * scale),
+                    );
+
+                    if rect.contains(global_pos) {
+                        painter.circle_filled(global_pos, 3.0, point_color);
+                    }
+                }
 
                 // Położenie wskaźnika myszy
-                if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
+                /*if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
                     if rect.contains(mouse_pos) {
                         // Pobieramy pozycję myszy względem lewego górnego rogu płótna (0..800)
                         let local_x = mouse_pos.x - rect.min.x;
@@ -174,152 +266,12 @@ impl eframe::App for CanvasApp {
                         // Formatujemy tekst do wyświetlenia (zaokrąglamy do liczb całkowitych)
                         cursor_status = format!("(X,Y): {:.0},{:.0}", mat_x, mat_y);
                     }
-                }
-
-                // Osie X i Y krzyżujące się na środku (0,0)
-                /*let center_x = rect.min.x + 400.0;
-                let center_y = rect.min.y + 400.0;
-                // Oś X
-                painter.line_segment(
-                    [egui::pos2(rect.min.x, center_y), egui::pos2(rect.max.x, center_y)],
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 60)),
-                );
-                // Oś Y
-                painter.line_segment(
-                    [egui::pos2(center_x, rect.min.y), egui::pos2(center_x, rect.max.y)],
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 60)),
-                );*/
-
-                
-                let center_pos = rect.min + egui::vec2(400.0, 400.0);
-                let grid_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 50));
-
-
-                // Rysowanie siatki 
-                if self.show_grid {
-                    // Generujemy linie pionowe i poziome dla wartości od -400 do 400 (krok 100)
-                    // Pomijamy 0, bo tam narysujemy wyraźniejsze osie główne
-                    for i in (-400..=400).step_by(100) {
-                        if i == 0 { continue; }
-                        
-                        // Przeliczanie matematycznego 'i' na odległość w pikselach od lewej/góry
-                        // Krok 100 w układzie [-500, 500] odpowiada dokładnie 80 pikselom (100 * 0.8)
-                        let offset = (i + 500) as f32 * 0.8;
-
-                        // Linie pionowe (stałe X)
-                        painter.line_segment(
-                            [egui::pos2(rect.min.x + offset, rect.min.y), egui::pos2(rect.min.x + offset, rect.max.y)],
-                            grid_stroke,
-                        );
-
-                        // Linie poziome (stałe Y)
-                        painter.line_segment(
-                            [egui::pos2(rect.min.x, rect.min.y + offset), egui::pos2(rect.max.x, rect.min.y + offset)],
-                            grid_stroke,
-                        );
-                    }
-                }
-
-                // Rysowanie okręgów
-                if self.show_circles {
-                    // Rysujemy okręgi o promieniach matematycznych 100, 200, 300, 400, 500 wokół środka
-                    for r in (100..=500).step_by(100) {
-                        // Skalowanie promienia: promień matematyczny 100 = 80 pikseli (100 * 0.8)
-                        let pixel_radius = r as f32 * 0.8;
-                        
-                        painter.circle_stroke(
-                            center_pos,
-                            pixel_radius,
-                            grid_stroke,
-                        );
-                    }
-                }
-                
-                // Główne osie XY
-                let axis_stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(80, 80, 80));
-                let axis_thin = egui::Stroke::new(0.5, egui::Color32::from_rgb(80, 80, 80));
-                // Oś X (pozioma linia środkowa)
-                painter.line_segment(
-                    [egui::pos2(rect.min.x, center_pos.y), egui::pos2(rect.max.x, center_pos.y)],
-                    axis_stroke,
-                );
-                // Oś Y (pionowa linia środkowa)
-                painter.line_segment(
-                    [egui::pos2(center_pos.x, rect.min.y), egui::pos2(center_pos.x, rect.max.y)],
-                    axis_stroke,
-                );
-                // Osie po skosie
-                painter.line_segment(
-                    [egui::pos2(rect.min.x, rect.min.y), egui::pos2(rect.max.x, rect.max.y)],
-                    axis_thin,
-                );
-                painter.line_segment(
-                    [egui::pos2(rect.min.x, rect.max.y), egui::pos2(rect.max.x, rect.min.y)],
-                    axis_thin,
-                );
-
-
-                // Rysowanie i skalowanie punktów wykryć
-                /*for point in &self.points {
-                    // Matematyczne przesunięcie i skalowanie:
-                    // Zakres wejściowy x: [-500, 500] -> Mapujemy na piksele: [0, 800]
-                    // piksel_x = ((x + 500) / 1000) * 800 = (x + 500) * 0.8
-                    let pixel_x = (point.x + 500.0) * 0.8;
-
-                    // Zakres wejściowy y: [-500, 500] -> Mapujemy na piksele: [0, 800] z odwróceniem osi
-                    // piksel_y = 800 - (((y + 500) / 1000) * 800) = 800 - (y + 500) * 0.8
-                    let pixel_y = 800.0 - ((point.y + 500.0) * 0.8);
-
-                    // Współrzędna globalna na ekranie (dodajemy lewy górny róg płótna `rect.min`)
-                    let global_pos = rect.min + egui::vec2(pixel_x, pixel_y);
-
-                    // Rysujemy punkt (tylko jeśli mieści się na płótnie)
-                    if rect.contains(global_pos) {
-                        painter.circle_filled(
-                            global_pos,
-                            5.0, // Promień kropki
-                            egui::Color32::from_rgb(0, 255, 150),
-                        );
-                    }
                 }*/
-                /*for (point, _) in &self.points {
-                    let pixel_x = (point.x + 500.0) * 0.8;
-                    let pixel_y = 800.0 - ((point.y + 500.0) * 0.8);
-                    let global_pos = rect.min + egui::vec2(pixel_x, pixel_y);
-
-                    if rect.contains(global_pos) {
-                        painter.circle_filled(
-                            global_pos,
-                            5.0,
-                            egui::Color32::from_rgb(0, 255, 150),
-                        );
-                    }
-                }*/
-                // Blednięcie
-                // Rysowanie punktów z użyciem dynamicznego czasu max_age_secs
-                for (point, timestamp) in &self.points {
-                    let elapsed_secs = timestamp.elapsed().as_secs_f32();
-                    
-                    // Bezpieczne zapobieganie dzieleniu przez zero i wyliczenie współczynnika na bazie suwaka
-                    let life_factor = if self.max_age_secs > 0.0 {
-                        (self.max_age_secs - elapsed_secs).max(0.0_f32) / self.max_age_secs
-                    } else {
-                        0.0
-                    };
-                    
-                    let r = (0.0 * life_factor) as u8;
-                    let g = (255.0 * life_factor) as u8;
-                    let b = (150.0 * life_factor) as u8;
-                    let a = (255.0 * life_factor) as u8;
-                    
-                    let point_color = egui::Color32::from_rgba_premultiplied(r, g, b, a);
-
-                    let pixel_x = (point.x + 500.0) * 0.8;
-                    let pixel_y = 800.0 - ((point.y + 500.0) * 0.8);
-                    let global_pos = rect.min + egui::vec2(pixel_x, pixel_y);
-
-                    if rect.contains(global_pos) {
-                        painter.circle_filled(global_pos, 3.0, point_color);
+                if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
+                    if rect.contains(mouse_pos) {
+                        let mat_x = (mouse_pos.x - center_pos.x) / scale;
+                        let mat_y = (center_pos.y - mouse_pos.y) / scale;
+                        cursor_status = format!("(X,Y): {:.0},{:.0}", mat_x, mat_y);
                     }
                 }
             });
@@ -327,12 +279,14 @@ impl eframe::App for CanvasApp {
 
         ui.separator();
 
+        let duration = start.elapsed(); //Ile mineło czasu
+
         ui.horizontal(|ui| {
             ui.add_space(5.0); // Wstawia 5 pikseli pustego miejsca z lewej strony
             ui.heading("Status");
             ui.separator();
             // Licznik
-            ui.label(format!("Liczba: {}", self.points.len()));
+            ui.label(format!("Liczba: {}, Skala: {}, Duration: {}us", self.points.len(), scale, duration.as_micros()));
             ui.separator();
             ui.label(egui::RichText::new(cursor_status).monospace().strong());
         });
@@ -342,7 +296,8 @@ impl eframe::App for CanvasApp {
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([815.0, 880.0]),
+            .with_inner_size([815.0, 880.0])
+            .with_min_inner_size([815.0, 880.0]), // Rozmiar minimalny
         ..Default::default()
     };
 
