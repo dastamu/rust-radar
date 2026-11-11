@@ -6,6 +6,8 @@ use std::sync::mpsc::{channel, Receiver};
 use std::thread;
 //use std::time::{Instant, Duration};
 use std::time::{Instant};
+use rand::Rng;
+use std::time::Duration;
 
 struct CanvasApp {
     // Kanał do odbierania współrzędnych z wątku UDP
@@ -22,6 +24,19 @@ struct CanvasApp {
     max_age_secs: f32,
     // Krok siatki i okręgów
     range_step: f32,
+}
+
+fn send_point(socket: &UdpSocket, x: i32, y: i32) {
+    let id: u32 = 0x101;
+    let length: u32 = 16;
+
+    let mut packet = [0u8; 16];
+    packet[0..4].copy_from_slice(&id.to_be_bytes());
+    packet[4..8].copy_from_slice(&length.to_be_bytes());
+    packet[8..12].copy_from_slice(&x.to_be_bytes());
+    packet[12..16].copy_from_slice(&y.to_be_bytes());
+
+    let _ = socket.send_to(&packet, "127.0.0.1:12121");
 }
 
 impl CanvasApp {
@@ -72,6 +87,24 @@ impl CanvasApp {
                         }
                     }
                 }
+            }
+        });
+
+
+        // Generator losowych punktów co 1.0s
+        thread::spawn(move || {
+            let socket = UdpSocket::bind("127.0.0.1:0").expect("Nie udało się utworzyć gniazda nadawczego");
+            let mut rng = rand::rng();
+
+            loop {
+                // Losujemy współrzędne z zakresu [-500, 500] włącznie
+                let x: i32 = rng.random_range(-500..=500);
+                let y: i32 = rng.random_range(-500..=500);
+
+                send_point(&socket, x, y);
+
+                // Czekamy dokładnie 1.0 sekundę przed wysłaniem kolejnego punktu
+                thread::sleep(Duration::from_secs_f32(1.0));
             }
         });
 
