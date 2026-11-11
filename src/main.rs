@@ -17,6 +17,8 @@ struct CanvasApp {
     show_circles: bool,
     // Czas życia punktów w sekundach
     max_age_secs: f32,
+    // Krok siatki i okręgów
+    range_step: f32,
 }
 
 impl CanvasApp {
@@ -77,6 +79,7 @@ impl CanvasApp {
             show_grid: true,    // Domyślnie włączone
             show_circles: true, // Domyślnie włączone
             max_age_secs: 10.0, // Domyślnie 10 sekund
+            range_step: 100.0,  // Domyślnie 100
         }
     }
 }
@@ -116,6 +119,19 @@ impl eframe::App for CanvasApp {
             // Suwak do regulacji czasu (zakres od 1 do 100 sekund)
             ui.label("Czas życia:");
             ui.add(egui::Slider::new(&mut self.max_age_secs, 1.0..=100.0).suffix("s"));
+            ui.separator();
+
+            // Zasięg
+            ui.label("Siatka:");
+            egui::ComboBox::from_id_salt("range_selector")
+                .selected_text(format!("{:.0}", self.range_step))
+                .width(55.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.range_step, 10.0, "10 km");
+                    ui.selectable_value(&mut self.range_step, 20.0, "20 km");
+                    ui.selectable_value(&mut self.range_step, 50.0, "50 km");
+                    ui.selectable_value(&mut self.range_step, 100.0, "100 km");
+                });
             ui.separator();
 
             // Przycisk czyszczenia
@@ -160,31 +176,44 @@ impl eframe::App for CanvasApp {
                 //let center_pos = rect.min + egui::vec2(400.0, 400.0);
                 // Dokładny geometryczny środek prostokątnego płótna to teraz nasze (0, 0)
                 let center_pos = rect.center();
-                let grid_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 50));
+                //let grid_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 50));
+
+                // Zwykła linia siatki (subtelna)
+                let minor_stroke = egui::Stroke::new(0.50_f32, egui::Color32::from_rgb(45, 52, 45));
+                // Wyróżniona linia siatki co 5. krok (ja minimalnie grubsza i wyraźniejsza)
+                let major_stroke = egui::Stroke::new(0.75_f32, egui::Color32::from_rgb(75, 88, 75));
 
                 // Rysowanie siatki 
                 if self.show_grid {
                     // Wyznaczamy ile pełnych "setek" zmieści się w poziomie i w pionie
-                    let steps_x = (max_math_x / 100.0).floor() as i32;
-                    let steps_y = (max_math_y / 100.0).floor() as i32;
+                    let steps_x = (max_math_x / self.range_step).floor() as i32;
+                    let steps_y = (max_math_y / self.range_step).floor() as i32;
 
                     // Pionowe linie siatki (od -steps_x*100 do +steps_x*100)
                     for i in -steps_x..=steps_x {
                         if i == 0 { continue; }
-                        let px_x = center_pos.x + (i as f32 * 100.0 * scale);
+                        let px_x = center_pos.x + (i as f32 * self.range_step * scale);
+
+                        // Wybieramy styl linii: co piąty krok jest wyróżniony
+                        let stroke = if i % 5 == 0 { major_stroke } else { minor_stroke };
+        
                         painter.line_segment(
                             [egui::pos2(px_x, rect.min.y), egui::pos2(px_x, rect.max.y)],
-                            grid_stroke,
+                            stroke,
                         );
                     }
 
                     // Poziome linie siatki (od -steps_y*100 do +steps_y*100)
                     for i in -steps_y..=steps_y {
                         if i == 0 { continue; }
-                        let px_y = center_pos.y - (i as f32 * 100.0 * scale);
+                        let px_y = center_pos.y - (i as f32 * self.range_step * scale);
+
+                        // Wybieramy styl linii: co piąty krok jest wyróżniony
+                        let stroke = if i % 5 == 0 { major_stroke } else { minor_stroke };
+
                         painter.line_segment(
                             [egui::pos2(rect.min.x, px_y), egui::pos2(rect.max.x, px_y)],
-                            grid_stroke,
+                            stroke,
                         );
                     }
                 }
@@ -192,15 +221,17 @@ impl eframe::App for CanvasApp {
                 // Rysowanie okręgów
                 if self.show_circles {
                     // Rysujemy okręgi co 100 aż do krawędzi dłuższego boku
-                    let max_r_steps = (max_math_x.max(max_math_y) / 100.0).floor() as i32 + 2;
+                    let max_r_steps = (max_math_x.max(max_math_y) / self.range_step).floor() as i32 + 2;
                     for r in 1..=max_r_steps {
-                        let pixel_radius = (r as f32 * 100.0) * scale;
-                        painter.circle_stroke(center_pos, pixel_radius, grid_stroke);
+                        let pixel_radius = (r as f32 * self.range_step) * scale;
+                        // Wybieramy styl linii: co piąty krok jest wyróżniony
+                        let stroke = if r % 5 == 0 { major_stroke } else { minor_stroke };
+                        painter.circle_stroke(center_pos, pixel_radius, stroke);
                     }
                 }
 
                 // Główne osie XY
-                let axis_stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(80, 80, 80));
+                let axis_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 80));
                 // Oś X (pozioma linia środkowa)
                 painter.line_segment(
                     [egui::pos2(rect.min.x, center_pos.y), egui::pos2(rect.max.x, center_pos.y)],
