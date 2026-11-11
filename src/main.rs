@@ -11,6 +11,7 @@ use std::time::Duration;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::f32::consts::PI;
+use eframe::egui::{Color32, RichText};
 
 
 #[derive(PartialEq, Clone, Copy)]
@@ -196,16 +197,13 @@ impl eframe::App for CanvasApp {
             ui.add_space(5.0); // Wstawia 5 pikseli pustego miejsca z lewej strony
     
             //ui.heading("Parametry");
-            //ui.separator();
-
-            // Checkboxy do włączania/wyłączania elementów siatki
-            ui.checkbox(&mut self.show_grid, "Siatka");
-            ui.checkbox(&mut self.show_circles, "Okręgi");
-            ui.checkbox(&mut self.show_labels, "Etykiety");
+            //ui.heading(RichText::new("Parametry").color(Color32::LIGHT_BLUE));
+            ui.heading(RichText::new("Parametry").color(Color32::from_rgb(96, 96, 96)));
             ui.separator();
 
             // Suwak do regulacji czasu (zakres od 1 do 100 sekund)
-            ui.label("Czas życia:");
+            ui.label("Historia:");
+            ui.spacing_mut().slider_width = 100.0;
             ui.add(egui::Slider::new(&mut self.max_age_secs, 1.0..=100.0).suffix("s"));
             ui.separator();
 
@@ -244,6 +242,20 @@ impl eframe::App for CanvasApp {
             if ui.button("Wyczyść").clicked() {
                 self.points.clear();
             }
+            ui.separator();
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(5.0); // Wstawia 5 pikseli pustego miejsca z lewej strony
+            //ui.heading("Widok");
+            ui.heading(RichText::new("Widok").color(Color32::from_rgb(96, 96, 96)));
+            ui.separator();
+
+            // Checkboxy do włączania/wyłączania elementów siatki
+            ui.checkbox(&mut self.show_grid, "Siatka");
+            ui.separator();
+            ui.checkbox(&mut self.show_circles, "Okręgi");
+            ui.separator();
+            ui.checkbox(&mut self.show_labels, "Etykiety");
             ui.separator();
         });
 
@@ -410,13 +422,6 @@ impl eframe::App for CanvasApp {
                         0.0
                     };
                     
-  /*                  // Blaknięcie
-                    let r = (0.0 * life_factor) as u8;
-                    let g = (255.0 * life_factor) as u8;
-                    let b = (150.0 * life_factor) as u8;
-                    let a = (255.0 * life_factor) as u8;
-                    let point_color = egui::Color32::from_rgba_premultiplied(r, g, b, a);
-*/
                     // Kolor kropki (neonowy zielony z zanikaniem)
                     let point_color = egui::Color32::from_rgba_premultiplied(
                         0,
@@ -488,7 +493,8 @@ impl eframe::App for CanvasApp {
         ui.horizontal(|ui| {
             ui.add_space(5.0); // Wstawia 5 pikseli pustego miejsca z lewej strony
             //ui.heading("Status");
-            //ui.separator();
+            ui.heading(RichText::new("Status").color(Color32::from_rgb(96, 96, 96)));
+            ui.separator();
             // Licznik, Skala, Duration
             ui.label(format!("Liczba: {}, Skala: {}, Duration: {}us", self.points.len(), scale, duration.as_micros()));
             ui.separator();
