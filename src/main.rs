@@ -376,6 +376,20 @@ impl eframe::App for CanvasApp {
                     [egui::pos2(rect.min.x, rect.max.y), egui::pos2(rect.max.x, rect.min.y)],
                     axis_thin,
                 );*/
+                // Rysowanie 12 promieni co 30 stopni (0, 30, 60 ... 330)
+                let radius = response.rect.width().min(response.rect.height()) * 0.45;
+                //let stroke = egui::Stroke::new(2.0, egui::Color32::LIGHT_BLUE);
+                for i in 0..12 {
+                    let angle_deg = (i as f32) * 30.0;
+                    let angle_rad = angle_deg.to_radians();
+
+                    // Vec2::angled tworzy wektor jednostkowy dla podanego kąta w radianach
+                    let direction = egui::Vec2::angled(angle_rad);
+                    let end_point = center_pos + direction * radius;
+
+                    painter.line_segment([center_pos, end_point], axis_stroke);
+                }
+
 
                 // Martwy stożek
                 //let fill_color = egui::Color32::from_rgb(220, 50, 50);
