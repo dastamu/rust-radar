@@ -8,6 +8,28 @@ use std::thread;
 use std::time::{Instant};
 use rand::Rng;
 use std::time::Duration;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
+use std::f32::consts::PI;
+
+
+#[derive(PartialEq, Clone, Copy)]
+#[repr(u8)]
+enum SimMode {
+    Off = 0,
+    Random = 1,
+    Circle = 2,
+}
+
+impl SimMode {
+    fn label(&self) -> &'static str {
+        match self {
+            SimMode::Off => "Wył.",
+            SimMode::Random => "Los",
+            SimMode::Circle => "Okrąg",
+        }
+    }
+}
 
 struct CanvasApp {
     // Kanał do odbierania współrzędnych z wątku UDP
@@ -24,6 +46,9 @@ struct CanvasApp {
     max_age_secs: f32,
     // Krok siatki i okręgów
     range_step: f32,
+    // Pola sterujące symulatorem
+    sim_mode: SimMode,
+    shared_sim_mode: Arc<AtomicU8>,
 }
 
 fn send_point(socket: &UdpSocket, x: i32, y: i32) {
@@ -90,21 +115,40 @@ impl CanvasApp {
             }
         });
 
+        let shared_sim_mode = Arc::new(AtomicU8::new(SimMode::Off as u8));
+        let thread_sim_mode = Arc::clone(&shared_sim_mode);
 
-        // Generator losowych punktów co 1.0s
+        // Wątek generatora punktów
         thread::spawn(move || {
             let socket = UdpSocket::bind("127.0.0.1:0").expect("Nie udało się utworzyć gniazda nadawczego");
             let mut rng = rand::rng();
+            let mut angle: f32 = 0.0;
 
             loop {
-                // Losujemy współrzędne z zakresu [-500, 500] włącznie
-                let x: i32 = rng.random_range(-500..=500);
-                let y: i32 = rng.random_range(-500..=500);
+                // Odczytujemy aktualny tryb wybrany w GUI
+                let current_mode = thread_sim_mode.load(Ordering::Relaxed);
+                //println!("Imit mode {}",current_mode);
 
-                send_point(&socket, x, y);
+                match current_mode {
+                    1 => {
+                        // 1. Losowe punkty z zakresu [-500, 500]
+                        let x: i32 = rng.random_range(-500..=500);
+                        let y: i32 = rng.random_range(-500..=500);
+                        send_point(&socket, x, y);
+                    }
+                    2 => {
+                        // 2. Dodatkowy tryb: ruch po okręgu o promieniu 300
+                        let x = (300.0 * angle.cos()) as i32;
+                        let y = (300.0 * angle.sin()) as i32;
+                        send_point(&socket, x, y);
+                        angle -= PI/180.0*2.;
+                    }
+                    _ => {
+                        // 0. Wyłączony - wątek nic nie wysyła i czeka
+                    }
+                }
 
-                // Czekamy dokładnie 1.0 sekundę przed wysłaniem kolejnego punktu
-                thread::sleep(Duration::from_secs_f32(0.1));
+                thread::sleep(Duration::from_secs_f32(1.0));
             }
         });
 
@@ -118,6 +162,8 @@ impl CanvasApp {
             show_labels: false, // Domyślnie etykiety są niewidoczne
             max_age_secs: 10.0, // Domyślnie 10 sekund
             range_step: 20.0,   // Domyślnie
+            sim_mode: SimMode::Off,
+            shared_sim_mode,
         }
     }
 }
@@ -149,8 +195,8 @@ impl eframe::App for CanvasApp {
         ui.horizontal(|ui| {
             ui.add_space(5.0); // Wstawia 5 pikseli pustego miejsca z lewej strony
     
-            ui.heading("Parametry");
-            ui.separator();
+            //ui.heading("Parametry");
+            //ui.separator();
 
             // Checkboxy do włączania/wyłączania elementów siatki
             ui.checkbox(&mut self.show_grid, "Siatka");
@@ -167,13 +213,31 @@ impl eframe::App for CanvasApp {
             ui.label("Siatka:");
             egui::ComboBox::from_id_salt("range_selector")
                 .selected_text(format!("{:.0}", self.range_step))
-                .width(55.0)
+                .width(30.0)
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.range_step, 10.0, "10 km");
                     ui.selectable_value(&mut self.range_step, 20.0, "20 km");
                     ui.selectable_value(&mut self.range_step, 50.0, "50 km");
                     ui.selectable_value(&mut self.range_step, 100.0, "100 km");
                 });
+            ui.separator();
+
+            // Imitacja punktów
+            ui.label("Imit:");
+            let prev_mode = self.sim_mode;
+            egui::ComboBox::from_id_salt("sim_mode_selector")
+                .selected_text(self.sim_mode.label())
+                .width(50.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.sim_mode, SimMode::Off, SimMode::Off.label());
+                    ui.selectable_value(&mut self.sim_mode, SimMode::Random, SimMode::Random.label());
+                    ui.selectable_value(&mut self.sim_mode, SimMode::Circle, SimMode::Circle.label());
+                });
+            // Jeśli wybrano inny tryb, przekazujemy go natychmiast do wątku w tle
+            if prev_mode != self.sim_mode {
+                self.shared_sim_mode.store(self.sim_mode as u8, Ordering::Relaxed);
+            }
+
             ui.separator();
 
             // Przycisk czyszczenia
@@ -423,12 +487,14 @@ impl eframe::App for CanvasApp {
 
         ui.horizontal(|ui| {
             ui.add_space(5.0); // Wstawia 5 pikseli pustego miejsca z lewej strony
-            ui.heading("Status");
-            ui.separator();
-            // Licznik
+            //ui.heading("Status");
+            //ui.separator();
+            // Licznik, Skala, Duration
             ui.label(format!("Liczba: {}, Skala: {}, Duration: {}us", self.points.len(), scale, duration.as_micros()));
             ui.separator();
-            ui.label(egui::RichText::new(cursor_status).monospace().strong());
+            //ui.label(egui::RichText::new(cursor_status).monospace().strong());
+            ui.label(egui::RichText::new(cursor_status).monospace());
+
         });
     }
 }
