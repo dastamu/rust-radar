@@ -104,7 +104,7 @@ impl CanvasApp {
                 send_point(&socket, x, y);
 
                 // Czekamy dokładnie 1.0 sekundę przed wysłaniem kolejnego punktu
-                thread::sleep(Duration::from_secs_f32(1.0));
+                thread::sleep(Duration::from_secs_f32(0.1));
             }
         });
 
@@ -229,7 +229,7 @@ impl eframe::App for CanvasApp {
                 let major_stroke = egui::Stroke::new(0.75_f32, egui::Color32::from_rgb(75, 88, 75));
                 // Etykiety
                 let label_color = egui::Color32::from_rgb(140, 155, 140);
-                let label_font = egui::FontId::monospace(10.0);
+                let label_font = egui::FontId::monospace(8.0);
                 // Krok
                 let steps_x = (max_math_x / self.range_step).floor() as i32;
                 let steps_y = (max_math_y / self.range_step).floor() as i32;
@@ -384,7 +384,7 @@ impl eframe::App for CanvasApp {
                             painter.text(
                                 global_pos + egui::vec2(8.0, -6.0),
                                 egui::Align2::LEFT_BOTTOM,
-                                format!("#{} ({:.0}, {:.0})", id, point.x, point.y),
+                                format!("#{}\nX: {:.0}\nY: {:.0}", id, point.x, point.y),
                                 point_font.clone(),
                                 text_color,
                             );
