@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod mygeo;
+use mygeo::kartezjanskie_na_biegunowe; 
+
 use eframe::egui;
 use std::net::UdpSocket;
 use std::sync::mpsc::{channel, Receiver};
@@ -50,6 +53,8 @@ struct CanvasApp {
     // Pola sterujące symulatorem
     sim_mode: SimMode,
     shared_sim_mode: Arc<AtomicU8>,
+    // Siatka biegunowa
+    deg_v: i32,
 }
 
 fn send_point(socket: &UdpSocket, x: i32, y: i32) {
@@ -165,6 +170,7 @@ impl CanvasApp {
             range_step: 20.0,   // Domyślnie
             sim_mode: SimMode::Off,
             shared_sim_mode,
+            deg_v: 30,          // Domyślnie 30deg
         }
     }
 }
@@ -190,6 +196,7 @@ impl eframe::App for CanvasApp {
 
         // Zmienna, w której zapiszemy tekst statusu kursora
         let mut cursor_status = "Kursor poza płótnem".to_string();
+        let mut cursor_polar = "-, -".to_string();
 
         ui.add_space(5.0); // Margines górny: odsuwa cały wiersz o 5px od samej góry okna 
 
@@ -213,10 +220,29 @@ impl eframe::App for CanvasApp {
                 .selected_text(format!("{:.0}", self.range_step))
                 .width(30.0)
                 .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.range_step, 1.0, "1 km");
+                    ui.selectable_value(&mut self.range_step, 2.0, "2 km");
+                    ui.selectable_value(&mut self.range_step, 5.0, "5 km");
                     ui.selectable_value(&mut self.range_step, 10.0, "10 km");
                     ui.selectable_value(&mut self.range_step, 20.0, "20 km");
                     ui.selectable_value(&mut self.range_step, 50.0, "50 km");
                     ui.selectable_value(&mut self.range_step, 100.0, "100 km");
+                });
+            ui.separator();
+
+            // Biegunowe
+            ui.label("Biegunowe:");
+            egui::ComboBox::from_id_salt("range_polar")
+                .selected_text(format!("{:.0}", self.deg_v))
+                .width(30.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.deg_v, 1, "1°");
+                    ui.selectable_value(&mut self.deg_v, 3, "3°");
+                    ui.selectable_value(&mut self.deg_v, 5, "5°");
+                    ui.selectable_value(&mut self.deg_v, 10, "10°");
+                    ui.selectable_value(&mut self.deg_v, 15, "15°");
+                    ui.selectable_value(&mut self.deg_v, 30, "30°");
+                    ui.selectable_value(&mut self.deg_v, 45, "45°");
                 });
             ui.separator();
 
@@ -366,21 +392,13 @@ impl eframe::App for CanvasApp {
                     [egui::pos2(center_pos.x, rect.min.y), egui::pos2(center_pos.x, rect.max.y)],
                     axis_stroke,
                 );
-                /*// Osie po skosie
-                let axis_thin = egui::Stroke::new(0.5, egui::Color32::from_rgb(80, 80, 80));
-                painter.line_segment(
-                    [egui::pos2(rect.min.x, rect.min.y), egui::pos2(rect.max.x, rect.max.y)],
-                    axis_thin,
-                );
-                painter.line_segment(
-                    [egui::pos2(rect.min.x, rect.max.y), egui::pos2(rect.max.x, rect.min.y)],
-                    axis_thin,
-                );*/
-                // Rysowanie 12 promieni co 30 stopni (0, 30, 60 ... 330)
-                let radius = response.rect.width().min(response.rect.height()) * 0.45;
+                // Rysowanie promieni
+                let radius = response.rect.width().min(response.rect.height()) * 0.50;
                 //let stroke = egui::Stroke::new(2.0, egui::Color32::LIGHT_BLUE);
-                for i in 0..12 {
-                    let angle_deg = (i as f32) * 30.0;
+                //let deg_v = 10;
+                let deg_l= 360/self.deg_v;
+                for i in 0..deg_l {
+                    let angle_deg = (i as f32) * (self.deg_v as f32);
                     let angle_rad = angle_deg.to_radians();
 
                     // Vec2::angled tworzy wektor jednostkowy dla podanego kąta w radianach
@@ -499,7 +517,9 @@ impl eframe::App for CanvasApp {
                     if rect.contains(mouse_pos) {
                         let mat_x = (mouse_pos.x - center_pos.x) / scale;
                         let mat_y = (center_pos.y - mouse_pos.y) / scale;
-                        cursor_status = format!("(X,Y): {:.0},{:.0}", mat_x, mat_y);
+                        cursor_status = format!("X {:.1}, Y {:.1}", mat_x, mat_y);
+                        let (r, beta_rad) = kartezjanskie_na_biegunowe(mat_x, mat_y);
+                        cursor_polar = format!("R {:.1}, Beta {:.1}", r, beta_rad.to_degrees());
                     }
                 }
             });
@@ -520,6 +540,8 @@ impl eframe::App for CanvasApp {
             ui.separator();
             //ui.label(egui::RichText::new(cursor_status).monospace().strong());
             ui.label(egui::RichText::new(cursor_status).monospace());
+            ui.separator();
+            ui.label(egui::RichText::new(cursor_polar).monospace());
 
         });
     }
