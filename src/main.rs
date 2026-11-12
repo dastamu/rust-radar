@@ -23,6 +23,9 @@ enum SimMode {
     Off = 0,
     Random = 1,
     Circle = 2,
+    Random2 = 3,
+    Random3 = 4,
+    Random4 = 5,
 }
 
 impl SimMode {
@@ -31,6 +34,9 @@ impl SimMode {
             SimMode::Off => "Wył.",
             SimMode::Random => "Los",
             SimMode::Circle => "Okrąg",
+            SimMode::Random2 => "Los2",
+            SimMode::Random3 => "Los3",
+            SimMode::Random4 => "Los4",
         }
     }
 }
@@ -143,6 +149,7 @@ impl CanvasApp {
                         let x: i32 = rng.random_range(-500..=500);
                         let y: i32 = rng.random_range(-500..=500);
                         send_point(&socket, x, y);
+                        thread::sleep(Duration::from_secs_f32(1.0));
                     }
                     2 => {
                         // 2. Dodatkowy tryb: ruch po okręgu o promieniu 300
@@ -150,13 +157,34 @@ impl CanvasApp {
                         let y = (300.0 * angle.sin()) as i32;
                         send_point(&socket, x, y);
                         angle -= PI/180.0*2.;
+                        thread::sleep(Duration::from_secs_f32(1.0));
+                    }
+                    3 => {
+                        // 1. Losowe punkty z zakresu [-480, 480]
+                        let x: i32 = rng.random_range(-480..=480);
+                        let y: i32 = rng.random_range(-480..=480);
+                        send_point(&socket, x, y);
+                        thread::sleep(Duration::from_secs_f32(0.1));
+                    }
+                    4 => {
+                        // 1. Losowe punkty z zakresu [-480, 480]
+                        let x: i32 = rng.random_range(-480..=480);
+                        let y: i32 = rng.random_range(-480..=480);
+                        send_point(&socket, x, y);
+                        thread::sleep(Duration::from_secs_f32(0.01));
+                    }
+                    5 => {
+                        // 1. Losowe punkty z zakresu [-480, 480]
+                        let x: i32 = rng.random_range(-480..=480);
+                        let y: i32 = rng.random_range(-480..=480);
+                        send_point(&socket, x, y);
+                        thread::sleep(Duration::from_secs_f32(0.001));
                     }
                     _ => {
                         // 0. Wyłączony - wątek nic nie wysyła i czeka
+                        thread::sleep(Duration::from_secs_f32(1.0));
                     }
                 }
-
-                thread::sleep(Duration::from_secs_f32(1.0));
             }
         });
 
@@ -259,6 +287,9 @@ impl eframe::App for CanvasApp {
                     ui.selectable_value(&mut self.sim_mode, SimMode::Off, SimMode::Off.label());
                     ui.selectable_value(&mut self.sim_mode, SimMode::Random, SimMode::Random.label());
                     ui.selectable_value(&mut self.sim_mode, SimMode::Circle, SimMode::Circle.label());
+                    ui.selectable_value(&mut self.sim_mode, SimMode::Random2, SimMode::Random2.label());
+                    ui.selectable_value(&mut self.sim_mode, SimMode::Random3, SimMode::Random3.label());
+                    ui.selectable_value(&mut self.sim_mode, SimMode::Random4, SimMode::Random4.label());
                 });
             // Jeśli wybrano inny tryb, przekazujemy go natychmiast do wątku w tle
             if prev_mode != self.sim_mode {
