@@ -583,6 +583,29 @@ impl eframe::App for CanvasApp {
                     }
                 }
 
+                //Teksty
+                /*painter.text(
+                    egui::vec2(8.0, -8.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    format!("Debug: {}", 1),
+                    point_font.clone(),
+                    label_color,
+                );*/
+                painter.text(
+                    egui::pos2(20.0, 70.0),             // Współrzędne X, Y (w układzie okna)
+                    egui::Align2::LEFT_TOP,             // Punkt zakotwiczenia tekstu
+                    "Debug:",                            // Treść napisu
+                    egui::FontId::proportional(12.0),   // Czcionka i rozmiar (np. 18px)
+                    egui::Color32::GRAY,                // Kolor tekstu
+                );
+                painter.text(
+                    egui::pos2(15.0, 85.0),             // Współrzędne X, Y (w układzie okna)
+                    egui::Align2::LEFT_TOP,             // Punkt zakotwiczenia tekstu
+                    format!("Liczba: {}\nSkala: {:.3}\nZoom: {:.3}", self.points.len(), scale, self.zoom), // Treść napisu
+                    egui::FontId::proportional(12.0),   // Czcionka i rozmiar (np. 18px)
+                    egui::Color32::GRAY,                // Kolor tekstu
+                );
+
                 // Położenie wskaźnika myszy
                 /*if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
                     if rect.contains(mouse_pos) {
@@ -633,7 +656,8 @@ impl eframe::App for CanvasApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // UWAGA: Elementy dodawane są od prawej do lewej!
                 ui.add_space(5.0);
-                ui.label(format!("Liczba: {}, Skala: {}, FPS: {:.1}  ", self.points.len(), scale, 1000000./(duration.as_micros() as f32)));
+                // ui.label(format!("Liczba: {}, Skala: {}, FPS: {:.1}  ", self.points.len(), scale, 1000000./(duration.as_micros() as f32)));
+                ui.label(format!("FPS: {:.1}  ", 1000000./(duration.as_micros() as f32)));
             });
 
         });
