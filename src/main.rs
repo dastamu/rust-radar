@@ -55,6 +55,8 @@ struct CanvasApp {
     shared_sim_mode: Arc<AtomicU8>,
     // Siatka biegunowa
     deg_v: i32,
+    // Zoom
+    zoom: f32,
 }
 
 fn send_point(socket: &UdpSocket, x: i32, y: i32) {
@@ -171,6 +173,7 @@ impl CanvasApp {
             sim_mode: SimMode::Off,
             shared_sim_mode,
             deg_v: 30,          // Domyślnie 30deg
+            zoom: 1.0,
         }
     }
 }
@@ -262,13 +265,15 @@ impl eframe::App for CanvasApp {
                 self.shared_sim_mode.store(self.sim_mode as u8, Ordering::Relaxed);
             }
 
-            ui.separator();
-
-            // Przycisk czyszczenia
-            if ui.button("Wyczyść").clicked() {
-                self.points.clear();
-            }
-            ui.separator();
+            // Kontener dla elementów po prawej stronie
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // UWAGA: Elementy dodawane są od prawej do lewej!
+                ui.add_space(5.0); // Wstawia 5 pikseli pustego miejsca z prawej strony
+                // Przycisk czyszczenia
+                if ui.button("Wyczyść").clicked() {
+                    self.points.clear();
+                }
+            });
         });
         ui.horizontal(|ui| {
             ui.add_space(5.0); // Wstawia 5 pikseli pustego miejsca z lewej strony
@@ -283,6 +288,30 @@ impl eframe::App for CanvasApp {
             ui.separator();
             ui.checkbox(&mut self.show_labels, "Etykiety");
             ui.separator();
+
+            // Kontener dla elementów po prawej stronie
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // UWAGA: Elementy dodawane są od prawej do lewej!
+                ui.add_space(5.0); // Wstawia 5 pikseli pustego miejsca z prawej strony
+                // Zoom
+                egui::ComboBox::from_id_salt("range_zoom")
+                    .selected_text(format!("{:.3}", 1./self.zoom))
+                    .width(30.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.zoom, 128., "1/128");
+                        ui.selectable_value(&mut self.zoom, 64., "1/64");
+                        ui.selectable_value(&mut self.zoom, 32., "1/32");
+                        ui.selectable_value(&mut self.zoom, 16., "1/16");
+                        ui.selectable_value(&mut self.zoom, 8., "1/8");
+                        ui.selectable_value(&mut self.zoom, 4., "1/4");
+                        ui.selectable_value(&mut self.zoom, 2., "1/2");
+                        ui.selectable_value(&mut self.zoom, 1., "1");
+                        ui.selectable_value(&mut self.zoom, 0.5, "2");
+                        ui.selectable_value(&mut self.zoom, 0.25, "4");
+                        ui.selectable_value(&mut self.zoom, 0.125, "8");
+                    });
+                ui.label("Zoom:");
+            });
         });
 
         ui.separator();
@@ -297,7 +326,7 @@ impl eframe::App for CanvasApp {
         // Wspólną skalę (piksele na jednostkę) wyznaczamy na podstawie krótszego boku
         let min_side = available_w.min(available_h);
         let offset = 15.0; //mały offset od brzegów kanwy
-        let scale = (min_side - offset)/ 1000.0_f32;
+        let scale = ((min_side - offset)/ 1000.0_f32) * self.zoom;
 
         // Obliczamy maksymalny zakres jednostek matematycznych dla dłuższego boku
         let max_math_x = (available_w / 2.0) / scale;
@@ -412,7 +441,7 @@ impl eframe::App for CanvasApp {
                 // Martwy stożek
                 //let fill_color = egui::Color32::from_rgb(220, 50, 50);
                 // Na środku rysujemy okrąg wypełniony kolorem
-                painter.circle_filled(center_pos, 10.*scale, egui::Color32::from_rgb(30, 36, 30));
+                painter.circle_filled(center_pos, self.range_step*scale, egui::Color32::from_rgb(30, 36, 30));
 
                 // ---- ETYKIETY LICZBOWE NA OSIACH (CO 5. KROK) ----
                 if self.show_grid || self.show_circles {
