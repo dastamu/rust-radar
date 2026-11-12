@@ -515,7 +515,8 @@ impl eframe::App for CanvasApp {
             ui.heading(RichText::new("Status").color(Color32::from_rgb(96, 96, 96)));
             ui.separator();
             // Licznik, Skala, Duration
-            ui.label(format!("Liczba: {}, Skala: {}, Duration: {}us", self.points.len(), scale, duration.as_micros()));
+            //ui.label(format!("Liczba: {}, Skala: {}, Duration: {}us", self.points.len(), scale, duration.as_micros()));
+            ui.label(format!("Liczba: {}, Skala: {}, FPS: {:.1}", self.points.len(), scale, 1000000./(duration.as_micros() as f32)));
             ui.separator();
             //ui.label(egui::RichText::new(cursor_status).monospace().strong());
             ui.label(egui::RichText::new(cursor_status).monospace());
@@ -528,7 +529,7 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([815.0, 880.0])
-            .with_min_inner_size([815.0, 880.0]), // Rozmiar minimalny
+            .with_min_inner_size([815.0, 883.0]), // Rozmiar minimalny
         ..Default::default()
     };
 
