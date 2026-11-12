@@ -411,8 +411,8 @@ impl eframe::App for CanvasApp {
                 // Wyróżniona linia siatki co 5. krok (ja minimalnie grubsza i wyraźniejsza)
                 let major_stroke = egui::Stroke::new(0.75_f32, egui::Color32::from_rgb(75, 88, 75));
                 // Etykiety
-                let label_color = egui::Color32::from_rgb(140, 155, 140);
-                let label_font = egui::FontId::monospace(8.0);
+                let label_color = egui::Color32::from_rgb(120, 135, 120);
+                let label_font = egui::FontId::monospace(9.0);
                 // Krok
                 let steps_x = (max_math_x / self.range_step).floor() as i32;
                 let steps_y = (max_math_y / self.range_step).floor() as i32;
@@ -568,10 +568,14 @@ impl eframe::App for CanvasApp {
 
                         // rysowanie etykiety
                         if self.show_labels {
+                            let (r, beta_rad) = kartezjanskie_na_azymut(point.x, point.y);
+                            let beta_deg = beta_rad.to_degrees();
                             painter.text(
                                 global_pos + egui::vec2(8.0, -6.0),
                                 egui::Align2::LEFT_BOTTOM,
-                                format!("#{}\nX: {:.0}\nY: {:.0}", id, point.x, point.y),
+                                // format!("#{}\nX: {:.0}\nY: {:.0}", id, point.x, point.y),
+                                // format!("#{}\nX,Y {:.1},{:.1}\nR,B {:.1},{:.1}", id, point.x, point.y, r, beta_deg),
+                                format!("#{}\n{:.1}km {:.1}km\n{:.1}km {:.1}°", id, point.x, point.y, r, beta_deg),
                                 point_font.clone(),
                                 text_color,
                             );
@@ -640,7 +644,7 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([815.0, 880.0])
-            .with_min_inner_size([815.0, 883.0]), // Rozmiar minimalny
+            .with_min_inner_size([800.0, 895.0]), // Rozmiar minimalny
         ..Default::default()
     };
 
