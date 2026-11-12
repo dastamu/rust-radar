@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod mygeo;
-use mygeo::{kartezjanskie_na_biegunowe, biegunowe_na_kartezjanskie}; 
+use mygeo::{kartezjanskie_na_azymut, azymut_na_kartezjanskie}; 
 
 use eframe::egui;
 use std::net::UdpSocket;
@@ -167,7 +167,7 @@ impl CanvasApp {
                         let r: f32 = rng.random_range(0.0..=480000.0);
                         let b: f32 = rng.random_range(0.0..=TAU);
 
-                        let (x, y) = biegunowe_na_kartezjanskie(r,b);
+                        let (x, y) = azymut_na_kartezjanskie(r,b);
                         send_point(&socket, x as i32, y as i32);
                         thread::sleep(Duration::from_secs_f32(0.1));
                     }
@@ -599,7 +599,7 @@ impl eframe::App for CanvasApp {
                         let mat_x = (mouse_pos.x - center_pos.x) / scale;
                         let mat_y = (center_pos.y - mouse_pos.y) / scale;
                         cursor_status = format!("X {:.1}km, Y {:.1}km", mat_x, mat_y);
-                        let (r, beta_rad) = kartezjanskie_na_biegunowe(mat_x, mat_y);
+                        let (r, beta_rad) = kartezjanskie_na_azymut(mat_x, mat_y);
                         cursor_polar = format!("R {:.1}km, Beta {:.1}°", r, beta_rad.to_degrees());
                     }
                 }
