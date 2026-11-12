@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod mygeo;
-use mygeo::kartezjanskie_na_biegunowe; 
+use mygeo::{kartezjanskie_na_biegunowe, biegunowe_na_kartezjanskie}; 
 
 use eframe::egui;
 use std::net::UdpSocket;
@@ -13,7 +13,7 @@ use rand::Rng;
 use std::time::Duration;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
-use std::f32::consts::PI;
+use std::f32::consts::{PI,TAU};
 use eframe::egui::{Color32, RichText};
 
 
@@ -161,9 +161,11 @@ impl CanvasApp {
                     }
                     3 => {
                         // 1. Losowe punkty z zakresu [-480, 480]
-                        let x: i32 = rng.random_range(-480..=480);
-                        let y: i32 = rng.random_range(-480..=480);
-                        send_point(&socket, x, y);
+                        let r: f32 = rng.random_range(0.0..=480.0);
+                        let b: f32 = rng.random_range(0.0..=TAU);
+
+                        let (x, y) = biegunowe_na_kartezjanskie(r,b);
+                        send_point(&socket, x as i32, y as i32);
                         thread::sleep(Duration::from_secs_f32(0.1));
                     }
                     4 => {
