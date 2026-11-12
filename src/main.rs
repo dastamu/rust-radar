@@ -26,6 +26,7 @@ enum SimMode {
     Random2 = 3,
     Random3 = 4,
     Random4 = 5,
+    Circle2 = 6,
 }
 
 impl SimMode {
@@ -37,6 +38,7 @@ impl SimMode {
             SimMode::Random2 => "Los2",
             SimMode::Random3 => "Los3",
             SimMode::Random4 => "Los4",
+            SimMode::Circle2 => "Okrąg2",
         }
     }
 }
@@ -137,6 +139,7 @@ impl CanvasApp {
             let socket = UdpSocket::bind("127.0.0.1:0").expect("Nie udało się utworzyć gniazda nadawczego");
             let mut rng = rand::rng();
             let mut angle: f32 = 0.0;
+            let mut angle2: f32 = 0.0;
 
             loop {
                 // Odczytujemy aktualny tryb wybrany w GUI
@@ -181,6 +184,20 @@ impl CanvasApp {
                         let y: i32 = rng.random_range(-480000..=480000);
                         send_point(&socket, x, y);
                         thread::sleep(Duration::from_secs_f32(0.001));
+                    }
+                    6 => {
+                        // ruch po okręgu o promieniu 300 i 200
+                        let x1 = (300000.0 * angle.cos()) as i32;
+                        let y1 = (300000.0 * angle.sin()) as i32;
+                        send_point(&socket, x1, y1);
+                        angle -= PI/180.0*2.;
+                        thread::sleep(Duration::from_secs_f32(0.5));
+
+                        let x2 = (200000.0 * angle2.cos()) as i32;
+                        let y2 = (200000.0 * angle2.sin()) as i32;
+                        send_point(&socket, x2, y2);
+                        angle2 += PI/180.0*2.;
+                        thread::sleep(Duration::from_secs_f32(0.5));
                     }
                     _ => {
                         // 0. Wyłączony - wątek nic nie wysyła i czeka
@@ -292,6 +309,8 @@ impl eframe::App for CanvasApp {
                     ui.selectable_value(&mut self.sim_mode, SimMode::Random2, SimMode::Random2.label());
                     ui.selectable_value(&mut self.sim_mode, SimMode::Random3, SimMode::Random3.label());
                     ui.selectable_value(&mut self.sim_mode, SimMode::Random4, SimMode::Random4.label());
+                    ui.selectable_value(&mut self.sim_mode, SimMode::Circle2, SimMode::Circle2.label());
+
                 });
             // Jeśli wybrano inny tryb, przekazujemy go natychmiast do wątku w tle
             if prev_mode != self.sim_mode {
