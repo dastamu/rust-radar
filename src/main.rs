@@ -145,23 +145,23 @@ impl CanvasApp {
 
                 match current_mode {
                     1 => {
-                        // 1. Losowe punkty z zakresu [-500, 500]
-                        let x: i32 = rng.random_range(-500..=500);
-                        let y: i32 = rng.random_range(-500..=500);
+                        // 1. Losowe punkty z zakresu [-500,500] km
+                        let x: i32 = rng.random_range(-500000..=500000);
+                        let y: i32 = rng.random_range(-500000..=500000);
                         send_point(&socket, x, y);
                         thread::sleep(Duration::from_secs_f32(1.0));
                     }
                     2 => {
                         // 2. Dodatkowy tryb: ruch po okręgu o promieniu 300
-                        let x = (300.0 * angle.cos()) as i32;
-                        let y = (300.0 * angle.sin()) as i32;
+                        let x = (300000.0 * angle.cos()) as i32;
+                        let y = (300000.0 * angle.sin()) as i32;
                         send_point(&socket, x, y);
                         angle -= PI/180.0*2.;
                         thread::sleep(Duration::from_secs_f32(1.0));
                     }
                     3 => {
-                        // 1. Losowe punkty z zakresu [-480, 480]
-                        let r: f32 = rng.random_range(0.0..=480.0);
+                        // 1. Losowe punkty z zakresu [0,480] km i [0,360] deg
+                        let r: f32 = rng.random_range(0.0..=480000.0);
                         let b: f32 = rng.random_range(0.0..=TAU);
 
                         let (x, y) = biegunowe_na_kartezjanskie(r,b);
@@ -169,16 +169,16 @@ impl CanvasApp {
                         thread::sleep(Duration::from_secs_f32(0.1));
                     }
                     4 => {
-                        // 1. Losowe punkty z zakresu [-480, 480]
-                        let x: i32 = rng.random_range(-480..=480);
-                        let y: i32 = rng.random_range(-480..=480);
+                        // 1. Losowe punkty z zakresu [-480,480] km
+                        let x: i32 = rng.random_range(-480000..=480000);
+                        let y: i32 = rng.random_range(-480000..=480000);
                         send_point(&socket, x, y);
                         thread::sleep(Duration::from_secs_f32(0.01));
                     }
                     5 => {
-                        // 1. Losowe punkty z zakresu [-480, 480]
-                        let x: i32 = rng.random_range(-480..=480);
-                        let y: i32 = rng.random_range(-480..=480);
+                        // 1. Losowe punkty z zakresu [-480,480] km
+                        let x: i32 = rng.random_range(-480000..=480000);
+                        let y: i32 = rng.random_range(-480000..=480000);
                         send_point(&socket, x, y);
                         thread::sleep(Duration::from_secs_f32(0.001));
                     }
@@ -215,7 +215,7 @@ impl eframe::App for CanvasApp {
 
         // Odbieramy nowe punkty i zapisujemy je wraz z aktualnym czasem
         while let Ok((x, y)) = self.rx.try_recv() {
-            self.points.push((self.next_point_id, egui::pos2(x, y), std::time::Instant::now()));
+            self.points.push((self.next_point_id, egui::pos2(x/1000., y/1000.), std::time::Instant::now()));
             self.next_point_id += 1;
         }
 
@@ -228,8 +228,8 @@ impl eframe::App for CanvasApp {
         ui.request_repaint();
 
         // Zmienna, w której zapiszemy tekst statusu kursora
-        let mut cursor_status = "Kursor poza płótnem".to_string();
-        let mut cursor_polar = "-, -".to_string();
+        let mut cursor_status = "X -, Y -".to_string();
+        let mut cursor_polar = "R -, Beta -".to_string();
 
         ui.add_space(5.0); // Margines górny: odsuwa cały wiersz o 5px od samej góry okna 
 
