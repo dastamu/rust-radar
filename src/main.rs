@@ -517,9 +517,9 @@ impl eframe::App for CanvasApp {
                     if rect.contains(mouse_pos) {
                         let mat_x = (mouse_pos.x - center_pos.x) / scale;
                         let mat_y = (center_pos.y - mouse_pos.y) / scale;
-                        cursor_status = format!("X {:.1}, Y {:.1}", mat_x, mat_y);
+                        cursor_status = format!("X {:.1}km, Y {:.1}km", mat_x, mat_y);
                         let (r, beta_rad) = kartezjanskie_na_biegunowe(mat_x, mat_y);
-                        cursor_polar = format!("R {:.1}, Beta {:.1}", r, beta_rad.to_degrees());
+                        cursor_polar = format!("R {:.1}km, Beta {:.1}°", r, beta_rad.to_degrees());
                     }
                 }
             });
@@ -536,12 +536,20 @@ impl eframe::App for CanvasApp {
             ui.separator();
             // Licznik, Skala, Duration
             //ui.label(format!("Liczba: {}, Skala: {}, Duration: {}us", self.points.len(), scale, duration.as_micros()));
-            ui.label(format!("Liczba: {}, Skala: {}, FPS: {:.1}", self.points.len(), scale, 1000000./(duration.as_micros() as f32)));
-            ui.separator();
+            //ui.label(format!("Liczba: {}, Skala: {}, FPS: {:.1}", self.points.len(), scale, 1000000./(duration.as_micros() as f32)));
+            //ui.separator();
             //ui.label(egui::RichText::new(cursor_status).monospace().strong());
             ui.label(egui::RichText::new(cursor_status).monospace());
             ui.separator();
             ui.label(egui::RichText::new(cursor_polar).monospace());
+
+
+            // Kontener dla elementów po prawej stronie
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // UWAGA: Elementy dodawane są od prawej do lewej!
+                ui.add_space(5.0);
+                ui.label(format!("Liczba: {}, Skala: {}, FPS: {:.1}  ", self.points.len(), scale, 1000000./(duration.as_micros() as f32)));
+            });
 
         });
     }
