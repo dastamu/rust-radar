@@ -28,6 +28,7 @@ enum SimMode {
     Random3 = 4,
     Random4 = 5,
     Circle2 = 6,
+    Circle3 = 7,
 }
 
 impl SimMode {
@@ -40,6 +41,7 @@ impl SimMode {
             SimMode::Random3 => "Los3",
             SimMode::Random4 => "Los4",
             SimMode::Circle2 => "Okrąg2",
+            SimMode::Circle3 => "Okrąg3",
         }
     }
 }
@@ -54,6 +56,7 @@ struct CanvasApp {
     //rx: Receiver<(f32, f32)>,
     rx: Receiver<UdpMessage>,
     beta: u8, // ostatnia odebrana wartość azymutu (0-255)
+    shared_beta: Arc<AtomicU8>, // Współdzielona wartość beta dla wątków
     // Przechowujemy: (numer_punktu, pozycja, czas_odebrania)
     points: Vec<(u64, egui::Pos2, std::time::Instant)>,
     next_point_id: u64,
@@ -154,6 +157,9 @@ impl CanvasApp {
         let shared_sim_mode = Arc::new(AtomicU8::new(SimMode::Off as u8));
         let thread_sim_mode = Arc::clone(&shared_sim_mode);
 
+        let shared_beta = Arc::new(AtomicU8::new(0));
+        let thread_beta = Arc::clone(&shared_beta);
+
         // Wątek generatora punktów
         thread::spawn(move || {
             let socket = UdpSocket::bind("127.0.0.1:0").expect("Nie udało się utworzyć gniazda nadawczego");
@@ -219,6 +225,16 @@ impl CanvasApp {
                         angle2 += PI/180.0*2.;
                         thread::sleep(Duration::from_secs_f32(0.5));
                     }
+                    7 => {
+                        // Ruch po okręgu o promieniu 250 wg azymutu z beta
+                        let current_beta = thread_beta.load(Ordering::Relaxed);
+                        let angle = current_beta as f32 * ((2.*PI)/256.);
+                        //println!("Azymut: {} {}",current_beta, angle);
+                        let x = (250000.0 * angle.sin()) as i32;
+                        let y = (250000.0 * angle.cos()) as i32;
+                        send_point(&socket, x, y);
+                        thread::sleep(Duration::from_secs_f32(0.25));
+                    }
                     _ => {
                         // 0. Wyłączony - wątek nic nie wysyła i czeka
                         thread::sleep(Duration::from_secs_f32(1.0));
@@ -247,6 +263,7 @@ impl CanvasApp {
         Self {
             rx,
             beta: 0,
+            shared_beta,
             points: Vec::new(),
             next_point_id: 1,   // Zaczynamy numerację od 1
             show_grid: true,    // Domyślnie włączone
@@ -282,6 +299,7 @@ impl eframe::App for CanvasApp {
                 }
                 UdpMessage::Beta(b) => {
                     self.beta = b;
+                    self.shared_beta.store(b, Ordering::Relaxed);
                 }
             }
         }
@@ -360,6 +378,7 @@ impl eframe::App for CanvasApp {
                     ui.selectable_value(&mut self.sim_mode, SimMode::Random3, SimMode::Random3.label());
                     ui.selectable_value(&mut self.sim_mode, SimMode::Random4, SimMode::Random4.label());
                     ui.selectable_value(&mut self.sim_mode, SimMode::Circle2, SimMode::Circle2.label());
+                    ui.selectable_value(&mut self.sim_mode, SimMode::Circle3, SimMode::Circle3.label());
 
                 });
             // Jeśli wybrano inny tryb, przekazujemy go natychmiast do wątku w tle
@@ -469,7 +488,7 @@ impl eframe::App for CanvasApp {
                 let steps_x = (max_math_x / self.range_step).floor() as i32;
                 let steps_y = (max_math_y / self.range_step).floor() as i32;
 
-                // Rysowanie siatki 
+                // Rysowanie siatki kartezjańskiej =================================================
                 if self.show_grid {
 
                     // Pionowe linie siatki (od -steps_x*100 do +steps_x*100)
@@ -501,7 +520,7 @@ impl eframe::App for CanvasApp {
                     }
                 }
 
-                // Rysowanie okręgów
+                // Rysowanie okręgów ===============================================================
                 if self.show_circles {
                     // Rysujemy okręgi co 100 aż do krawędzi dłuższego boku
                     let max_r_steps = (max_math_x.max(max_math_y) / self.range_step).floor() as i32 + 2;
@@ -513,7 +532,7 @@ impl eframe::App for CanvasApp {
                     }
                 }
 
-                // Główne osie XY
+                // Główne osie XY ==================================================================
                 let axis_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 80));
                 // Oś X (pozioma linia środkowa)
                 painter.line_segment(
@@ -525,7 +544,8 @@ impl eframe::App for CanvasApp {
                     [egui::pos2(center_pos.x, rect.min.y), egui::pos2(center_pos.x, rect.max.y)],
                     axis_stroke,
                 );
-                // Rysowanie promieni
+
+                // Rysowanie promieni ==============================================================
                 let radius = response.rect.width().min(response.rect.height()) * 0.50;
                 //let stroke = egui::Stroke::new(2.0, egui::Color32::LIGHT_BLUE);
                 //let deg_v = 10;
@@ -541,22 +561,24 @@ impl eframe::App for CanvasApp {
                     painter.line_segment([center_pos, end_point], axis_stroke);
                 }
 
-                // Rysowanie pałki azymutu
+                // Rysowanie pałki azymutu ========================================================= AZ
                 if self.show_beta {
                     let angle_deg = self.beta as f32 * (360./256.);
-                    let angle_rad = angle_deg.to_radians();
+                    //let angle_deg = 0. as f32;
+                    let angle_rad = (angle_deg - 90.0).to_radians(); //wg azymutu 0° to kierunek N
+                    //println!(" AZ: {} {}",angle_deg,angle_rad);
                     let direction = egui::Vec2::angled(angle_rad);
                     let end_point = center_pos + direction * radius;
                     let beta_stroke = egui::Stroke::new(25.0, egui::Color32::from_rgba_unmultiplied(120, 160, 120, 32));
                     painter.line_segment([center_pos, end_point], beta_stroke);
                 }
 
-                // Martwy stożek
+                // Martwy stożek ===================================================================
                 //let fill_color = egui::Color32::from_rgb(220, 50, 50);
                 // Na środku rysujemy okrąg wypełniony kolorem
                 painter.circle_filled(center_pos, self.range_step*scale, egui::Color32::from_rgb(30, 36, 30));
 
-                // ---- ETYKIETY LICZBOWE NA OSIACH (CO 5. KROK) ----
+                // Etykiety osi (co 5 krok) ========================================================
                 if self.show_grid || self.show_circles {
                     // Etykiety wzdłuż osi X
                     for i in -steps_x..=steps_x {
@@ -589,7 +611,7 @@ impl eframe::App for CanvasApp {
                     }
                 }
 
-                // Rysowanie i skalowanie punktów wykryć + blednięcie
+                // Rysowanie i skalowanie punktów wykryć + blednięcie ==============================
                 // Rysowanie punktów z użyciem dynamicznego czasu max_age_secs
                 for (id, point, timestamp) in &self.points {
                     let elapsed_secs = timestamp.elapsed().as_secs_f32();
@@ -627,7 +649,7 @@ impl eframe::App for CanvasApp {
                         // rysowanie punktu wykrycia
                         painter.circle_filled(global_pos, 3.0, point_color);
 
-                        // rysowanie etykiety
+                        // rysowanie etykiety wykryć ===============================================
                         if self.show_labels {
                             let (r, beta_rad) = kartezjanskie_na_azymut(point.x, point.y);
                             let beta_deg = beta_rad.to_degrees();
@@ -644,7 +666,7 @@ impl eframe::App for CanvasApp {
                     }
                 }
 
-                //Teksty
+                //Teksty ===========================================================================
                 /*painter.text(
                     egui::vec2(8.0, -8.0),
                     egui::Align2::LEFT_BOTTOM,
@@ -662,12 +684,12 @@ impl eframe::App for CanvasApp {
                 painter.text(
                     egui::pos2(15.0, 85.0),             // Współrzędne X, Y (w układzie okna)
                     egui::Align2::LEFT_TOP,             // Punkt zakotwiczenia tekstu
-                    format!("Liczba: {}\nSkala: {:.3}\nZoom: {:.3}", self.points.len(), scale, self.zoom), // Treść napisu
+                    format!("Liczba: {}\nSkala: {:.3}\nZoom: {:.3}\nBeta: {}", self.points.len(), scale, self.zoom, self.beta), // Treść napisu
                     egui::FontId::proportional(12.0),   // Czcionka i rozmiar (np. 18px)
                     egui::Color32::GRAY,                // Kolor tekstu
                 );
 
-                // Położenie wskaźnika myszy
+                // Położenie wskaźnika myszy =======================================================
                 /*if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
                     if rect.contains(mouse_pos) {
                         // Pobieramy pozycję myszy względem lewego górnego rogu płótna (0..800)
