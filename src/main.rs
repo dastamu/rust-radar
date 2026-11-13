@@ -5,7 +5,8 @@ use mygeo::{kartezjanskie_na_azymut, azymut_na_kartezjanskie};
 
 use eframe::egui;
 use std::net::UdpSocket;
-use std::sync::mpsc::{channel, Receiver};
+//use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{Receiver};
 use std::thread;
 //use std::time::{Instant, Duration};
 use std::time::{Instant};
@@ -61,6 +62,8 @@ struct CanvasApp {
     show_circles: bool,
     // Etykiety punktów
     show_labels: bool,
+    // Pałka
+    show_beta: bool,
     // Czas życia punktów w sekundach
     max_age_secs: f32,
     // Krok siatki i okręgów
@@ -111,7 +114,7 @@ impl CanvasApp {
             let socket = UdpSocket::bind("127.0.0.1:12121").expect("Nie udało się powiązać portu UDP");
             let mut buf = [0u8; 1024]; //bufor na dane
 
-            println!("Serwer UDP (Protokół 0x101) nasłuchuje na porcie 12121...");
+            println!("Serwer UDP nasłuchuje na porcie 12121...");
 
             loop {
                 if let Ok((amt, _src)) = socket.recv_from(&mut buf) {
@@ -120,33 +123,8 @@ impl CanvasApp {
                         // Dekodowanie ID pakietu (bajty 0..4)
                         let id_bytes: [u8; 4] = buf[0..4].try_into().unwrap();
                         let packet_id = u32::from_be_bytes(id_bytes);
-/*
-                        // Walidacja 2: Czy ID zgadza się z oczekiwanym 0x101?
-                        if packet_id == 0x101 {
-                            // Dekodowanie Długości (bajty 4..8)
-                            let len_bytes: [u8; 4] = buf[4..8].try_into().unwrap();
-                            let packet_len = u32::from_be_bytes(len_bytes);
 
-                            // Walidacja 3: Sprawdzenie pola długości (zależnie od definicji, np. rozmiar całego pakietu = 16)
-                            if packet_len == 16 {
-                                // Dekodowanie współrzędnej X (bajty 8..12)
-                                let x_bytes: [u8; 4] = buf[8..12].try_into().unwrap();
-                                let x_val = i32::from_be_bytes(x_bytes);
-
-                                // Dekodowanie współrzędnej Y (bajty 12..16)
-                                let y_bytes: [u8; 4] = buf[12..16].try_into().unwrap();
-                                let y_val = i32::from_be_bytes(y_bytes);
-
-                                // Przesyłamy współrzędne do wątku głównego GUI
-                                let _ = tx.send(UdpMessage::Point(x_val as f32, y_val as f32));
-                                ctx.request_repaint();
-                            } else {
-                                eprintln!("Błąd: Niepoprawna długość w nagłówku pakietu: {}", packet_len);
-                            }
-                        } else {
-                            eprintln!("Błąd: Nieznane ID pakietu: 0x{:X}", packet_id);
-                        }*/
-
+                        // Dekodowanie długości odebranego pakietu (bajty 4..8)
                         let len_bytes: [u8; 4] = buf[4..8].try_into().unwrap();
                         let packet_len = u32::from_be_bytes(len_bytes);
 
@@ -262,7 +240,7 @@ impl CanvasApp {
                     nrbeta = 0;
                 }
                 thread::sleep(Duration::from_secs_f32(0.0390625));
-                println!("Nowy azymut {}",nrbeta);
+                //println!("Nowy azymut {}",nrbeta);
             }
         });
 
@@ -274,6 +252,7 @@ impl CanvasApp {
             show_grid: true,    // Domyślnie włączone
             show_circles: true, // Domyślnie włączone
             show_labels: false, // Domyślnie etykiety są niewidoczne
+            show_beta: true,    // Domyślnie pałka włączona
             max_age_secs: 10.0, // Domyślnie 10 sekund
             range_step: 20.0,   // Domyślnie
             sim_mode: SimMode::Off,
@@ -410,6 +389,8 @@ impl eframe::App for CanvasApp {
             ui.checkbox(&mut self.show_circles, "Okręgi");
             ui.separator();
             ui.checkbox(&mut self.show_labels, "Etykiety");
+            ui.separator();
+            ui.checkbox(&mut self.show_beta, "Pałka");
             ui.separator();
 
             // Kontener dla elementów po prawej stronie
@@ -560,14 +541,15 @@ impl eframe::App for CanvasApp {
                     painter.line_segment([center_pos, end_point], axis_stroke);
                 }
 
-
                 // Rysowanie pałki azymutu
-                let angle_deg = self.beta as f32 * (360./256.);
-                let angle_rad = angle_deg.to_radians();
-                let direction = egui::Vec2::angled(angle_rad);
-                let end_point = center_pos + direction * radius;
-                let beta_stroke = egui::Stroke::new(25.0, egui::Color32::from_rgba_unmultiplied(120, 160, 120, 16));
-                painter.line_segment([center_pos, end_point], beta_stroke);
+                if self.show_beta {
+                    let angle_deg = self.beta as f32 * (360./256.);
+                    let angle_rad = angle_deg.to_radians();
+                    let direction = egui::Vec2::angled(angle_rad);
+                    let end_point = center_pos + direction * radius;
+                    let beta_stroke = egui::Stroke::new(25.0, egui::Color32::from_rgba_unmultiplied(120, 160, 120, 32));
+                    painter.line_segment([center_pos, end_point], beta_stroke);
+                }
 
                 // Martwy stożek
                 //let fill_color = egui::Color32::from_rgb(220, 50, 50);
