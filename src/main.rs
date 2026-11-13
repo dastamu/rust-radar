@@ -67,6 +67,8 @@ struct CanvasApp {
     show_labels: bool,
     // Pałka
     show_beta: bool,
+    // Debug
+    show_debug: bool,
     // Czas życia punktów w sekundach
     max_age_secs: f32,
     // Krok siatki i okręgów
@@ -270,6 +272,7 @@ impl CanvasApp {
             show_circles: true, // Domyślnie włączone
             show_labels: false, // Domyślnie etykiety są niewidoczne
             show_beta: true,    // Domyślnie pałka włączona
+            show_debug: false,  // Domyślnie wyłaczony
             max_age_secs: 10.0, // Domyślnie 10 sekund
             range_step: 20.0,   // Domyślnie
             sim_mode: SimMode::Off,
@@ -410,6 +413,8 @@ impl eframe::App for CanvasApp {
             ui.checkbox(&mut self.show_labels, "Etykiety");
             ui.separator();
             ui.checkbox(&mut self.show_beta, "Pałka");
+            ui.separator();
+            ui.checkbox(&mut self.show_debug, "Debug");
             ui.separator();
 
             // Kontener dla elementów po prawej stronie
@@ -677,27 +682,29 @@ impl eframe::App for CanvasApp {
                 }
 
                 //Teksty ===========================================================================
-                /*painter.text(
-                    egui::vec2(8.0, -8.0),
-                    egui::Align2::LEFT_BOTTOM,
-                    format!("Debug: {}", 1),
-                    point_font.clone(),
-                    label_color,
-                );*/
-                painter.text(
-                    egui::pos2(20.0, 70.0),             // Współrzędne X, Y (w układzie okna)
-                    egui::Align2::LEFT_TOP,             // Punkt zakotwiczenia tekstu
-                    "Debug:",                            // Treść napisu
-                    egui::FontId::proportional(12.0),   // Czcionka i rozmiar (np. 18px)
-                    egui::Color32::GRAY,                // Kolor tekstu
-                );
-                painter.text(
-                    egui::pos2(15.0, 85.0),             // Współrzędne X, Y (w układzie okna)
-                    egui::Align2::LEFT_TOP,             // Punkt zakotwiczenia tekstu
-                    format!("Liczba: {}\nSkala: {:.3}\nZoom: {:.3}\nBeta: {}", self.points.len(), scale, self.zoom, self.beta), // Treść napisu
-                    egui::FontId::proportional(12.0),   // Czcionka i rozmiar (np. 18px)
-                    egui::Color32::GRAY,                // Kolor tekstu
-                );
+                if self.show_debug {
+                    /*painter.text(
+                        egui::vec2(8.0, -8.0),
+                        egui::Align2::LEFT_BOTTOM,
+                        format!("Debug: {}", 1),
+                        point_font.clone(),
+                        label_color,
+                    );*/
+                    painter.text(
+                        egui::pos2(20.0, 70.0),             // Współrzędne X, Y (w układzie okna)
+                        egui::Align2::LEFT_TOP,             // Punkt zakotwiczenia tekstu
+                        "Debug:",                            // Treść napisu
+                        egui::FontId::proportional(12.0),   // Czcionka i rozmiar (np. 18px)
+                        egui::Color32::GRAY,                // Kolor tekstu
+                    );
+                    painter.text(
+                        egui::pos2(15.0, 85.0),             // Współrzędne X, Y (w układzie okna)
+                        egui::Align2::LEFT_TOP,             // Punkt zakotwiczenia tekstu
+                        format!("Liczba: {}\nSkala: {:.3}\nZoom: {:.3}\nBeta: {}", self.points.len(), scale, self.zoom, self.beta), // Treść napisu
+                        egui::FontId::proportional(12.0),   // Czcionka i rozmiar (np. 18px)
+                        egui::Color32::GRAY,                // Kolor tekstu
+                    );
+                }
 
                 // Położenie wskaźnika myszy =======================================================
                 /*if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
