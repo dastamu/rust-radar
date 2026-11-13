@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+//#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod mygeo;
 use mygeo::{kartezjanskie_na_azymut, azymut_na_kartezjanskie}; 
@@ -43,9 +43,16 @@ impl SimMode {
     }
 }
 
+enum UdpMessage {
+    Point(f32, f32),
+    Beta(u8),
+}
+
 struct CanvasApp {
-    // Kanał do odbierania współrzędnych z wątku UDP
-    rx: Receiver<(f32, f32)>,
+    // Kanał do odbierania danych z wątków UDP
+    //rx: Receiver<(f32, f32)>,
+    rx: Receiver<UdpMessage>,
+    beta: u8, // ostatnia odebrana wartość azymutu (0-255)
     // Przechowujemy: (numer_punktu, pozycja, czas_odebrania)
     points: Vec<(u64, egui::Pos2, std::time::Instant)>,
     next_point_id: u64,
@@ -80,27 +87,40 @@ fn send_point(socket: &UdpSocket, x: i32, y: i32) {
     let _ = socket.send_to(&packet, "127.0.0.1:12121");
 }
 
+fn send_beta(socket: &UdpSocket, b: i32) {
+    let id: u32 = 0x201;
+    let length: u32 = 12;
+
+    let mut packet = [0u8; 12];
+    packet[0..4].copy_from_slice(&id.to_be_bytes());
+    packet[4..8].copy_from_slice(&length.to_be_bytes());
+    packet[8..12].copy_from_slice(&b.to_be_bytes());
+
+    let _ = socket.send_to(&packet, "127.0.0.1:12121");
+}
+
 impl CanvasApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let (tx, rx) = channel();
-        // W egui 0.37 klonujemy egui_ctx bezpośrednio z CreationContext
+        //let (tx, rx) = channel();
+        let (tx, rx) = std::sync::mpsc::channel::<UdpMessage>();
+        // W egui klonujemy egui_ctx bezpośrednio z CreationContext
         let ctx = cc.egui_ctx.clone();
 
+        // Wątek odbioru danych
         thread::spawn(move || {
             let socket = UdpSocket::bind("127.0.0.1:12121").expect("Nie udało się powiązać portu UDP");
-            // Oczekujemy dokładnie 16 bajtów danych (4 pola * 4 bajty)
-            let mut buf = [0u8; 16];
+            let mut buf = [0u8; 1024]; //bufor na dane
 
             println!("Serwer UDP (Protokół 0x101) nasłuchuje na porcie 12121...");
 
             loop {
                 if let Ok((amt, _src)) = socket.recv_from(&mut buf) {
-                    // Walidacja 1: Sprawdzenie, czy dotarło co najmniej 16 bajtów
-                    if amt == 16 {
+                    // Walidacja 1: Sprawdzenie, czy dotarło co najmniej 4 bajty by można było odczytać ID
+                    if amt >= 8 {
                         // Dekodowanie ID pakietu (bajty 0..4)
                         let id_bytes: [u8; 4] = buf[0..4].try_into().unwrap();
                         let packet_id = u32::from_be_bytes(id_bytes);
-
+/*
                         // Walidacja 2: Czy ID zgadza się z oczekiwanym 0x101?
                         if packet_id == 0x101 {
                             // Dekodowanie Długości (bajty 4..8)
@@ -118,13 +138,35 @@ impl CanvasApp {
                                 let y_val = i32::from_be_bytes(y_bytes);
 
                                 // Przesyłamy współrzędne do wątku głównego GUI
-                                let _ = tx.send((x_val as f32, y_val as f32));
+                                let _ = tx.send(UdpMessage::Point(x_val as f32, y_val as f32));
                                 ctx.request_repaint();
                             } else {
                                 eprintln!("Błąd: Niepoprawna długość w nagłówku pakietu: {}", packet_len);
                             }
                         } else {
                             eprintln!("Błąd: Nieznane ID pakietu: 0x{:X}", packet_id);
+                        }*/
+
+                        let len_bytes: [u8; 4] = buf[4..8].try_into().unwrap();
+                        let packet_len = u32::from_be_bytes(len_bytes);
+
+                        match packet_id {
+                            0x101 if amt == 16 && packet_len == 16 => {
+                                let x_val = i32::from_be_bytes(buf[8..12].try_into().unwrap());
+                                let y_val = i32::from_be_bytes(buf[12..16].try_into().unwrap());
+
+                                let _ = tx.send(UdpMessage::Point(x_val as f32, y_val as f32));
+                                ctx.request_repaint();
+                            }
+                            0x201 if amt == 12 && packet_len == 12 => {
+                                let beta_raw = u32::from_be_bytes(buf[8..12].try_into().unwrap());
+                                // Zabezpieczenie zakresu 0..=255
+                                let beta_val = beta_raw.min(255) as u8;
+
+                                let _ = tx.send(UdpMessage::Beta(beta_val));
+                                ctx.request_repaint();
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -207,9 +249,26 @@ impl CanvasApp {
             }
         });
 
+        // Wątek pałki
+        thread::spawn(move || {
+            let socket = UdpSocket::bind("127.0.0.1:0").expect("Nie udało się utworzyć gniazda nadawczego");
+            let mut nrbeta: i32 = 0;
+            
+            loop {
+                // wysyłanie sektora
+                send_beta(&socket, nrbeta);
+                nrbeta += 1;
+                if nrbeta >=256 {
+                    nrbeta = 0;
+                }
+                thread::sleep(Duration::from_secs_f32(0.0390625));
+                println!("Nowy azymut {}",nrbeta);
+            }
+        });
 
         Self {
             rx,
+            beta: 0,
             points: Vec::new(),
             next_point_id: 1,   // Zaczynamy numerację od 1
             show_grid: true,    // Domyślnie włączone
@@ -230,10 +289,22 @@ impl eframe::App for CanvasApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let start = Instant::now(); //Pomiar czasu
 
-        // Odbieramy nowe punkty i zapisujemy je wraz z aktualnym czasem
-        while let Ok((x, y)) = self.rx.try_recv() {
+        /*// Odbieramy nowe punkty i zapisujemy je wraz z aktualnym czasem
+        while let Ok(UdpMessage::Point(x, y)) = self.rx.try_recv() {
             self.points.push((self.next_point_id, egui::pos2(x/1000., y/1000.), std::time::Instant::now()));
             self.next_point_id += 1;
+        }*/
+        // Odbieramy wiadomości z kanału UDP
+        while let Ok(msg) = self.rx.try_recv() {
+            match msg {
+                UdpMessage::Point(x, y) => {
+                    self.points.push((self.next_point_id, egui::pos2(x/1000., y/1000.), std::time::Instant::now()));
+                    self.next_point_id += 1;
+                }
+                UdpMessage::Beta(b) => {
+                    self.beta = b;
+                }
+            }
         }
 
         // Automatyczne usuwanie punktów starszych
@@ -489,6 +560,14 @@ impl eframe::App for CanvasApp {
                     painter.line_segment([center_pos, end_point], axis_stroke);
                 }
 
+
+                // Rysowanie pałki azymutu
+                let angle_deg = self.beta as f32 * (360./256.);
+                let angle_rad = angle_deg.to_radians();
+                let direction = egui::Vec2::angled(angle_rad);
+                let end_point = center_pos + direction * radius;
+                let beta_stroke = egui::Stroke::new(25.0, egui::Color32::from_rgba_unmultiplied(120, 160, 120, 16));
+                painter.line_segment([center_pos, end_point], beta_stroke);
 
                 // Martwy stożek
                 //let fill_color = egui::Color32::from_rgb(220, 50, 50);
