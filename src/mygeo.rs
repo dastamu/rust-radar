@@ -66,4 +66,49 @@ fn funkcja_pomocnicza() {
     println!("Pomagam!");
 }
 
+use eframe::egui;
+
+pub const EARTH_RADIUS_KM: f32 = 6371.0;
+pub const CENTER_LAT_DEG: f32 = 52.23529353245678; 
+pub const CENTER_LON_DEG: f32 = 21.089756588924253;
+
+// Konwersja (lat, lon) w stopniach -> (x, y) w km na kanwie (Azimuthal Equidistant)
+#[allow(dead_code)]
+pub fn geo_to_canvas(lat_deg: f32, lon_deg: f32) -> egui::Pos2 {
+    let lat0 = CENTER_LAT_DEG.to_radians();
+    //let lon0 = CENTER_LON_DEG.to_radians();
+    let lat = lat_deg.to_radians();
+    let d_lon = (lon_deg - CENTER_LON_DEG).to_radians();
+
+    let cos_c = (lat0.sin() * lat.sin() + lat0.cos() * lat.cos() * d_lon.cos()).clamp(-1.0, 1.0);
+    let c = cos_c.acos();
+
+    let k = if c.abs() < 1e-6 { 1.0 } else { c / c.sin() };
+
+    let x = EARTH_RADIUS_KM * k * lat.cos() * d_lon.sin();
+    let y = EARTH_RADIUS_KM * k * (lat0.cos() * lat.sin() - lat0.sin() * lat.cos() * d_lon.cos());
+
+    egui::pos2(x, y)
+}
+
+// Konwersja odwrotna (x, y) w km -> (lat, lon) w stopniach (dla kursora)
+#[allow(dead_code)]
+pub fn canvas_to_geo(x: f32, y: f32) -> (f32, f32) {
+    let rho = (x * x + y * y).sqrt();
+    if rho < 1e-5 {
+        return (CENTER_LAT_DEG, CENTER_LON_DEG);
+    }
+
+    let lat0 = CENTER_LAT_DEG.to_radians();
+    let lon0 = CENTER_LON_DEG.to_radians();
+    let c = rho / EARTH_RADIUS_KM;
+
+    let sin_c = c.sin();
+    let cos_c = c.cos();
+
+    let lat = (cos_c * lat0.sin() + (y * sin_c * lat0.cos()) / rho).asin();
+    let lon = lon0 + (x * sin_c).atan2(rho * lat0.cos() * cos_c - y * lat0.sin() * sin_c);
+
+    (lat.to_degrees(), lon.to_degrees())
+}
 

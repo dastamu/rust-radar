@@ -1,7 +1,8 @@
 //#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod mygeo;
-use mygeo::{kartezjanskie_na_azymut, azymut_na_kartezjanskie}; 
+//use mygeo::{kartezjanskie_na_azymut, azymut_na_kartezjanskie};
+use mygeo::*;
 
 use eframe::egui;
 use std::net::UdpSocket;
@@ -67,6 +68,8 @@ struct CanvasApp {
     show_labels: bool,
     // Pałka
     show_beta: bool,
+    // Siatka geograficzna
+    show_geo_grid: bool,
     // Debug
     show_debug: bool,
     // Czas życia punktów w sekundach
@@ -272,6 +275,7 @@ impl CanvasApp {
             show_circles: true, // Domyślnie włączone
             show_labels: false, // Domyślnie etykiety są niewidoczne
             show_beta: true,    // Domyślnie pałka włączona
+            show_geo_grid: false,
             show_debug: false,  // Domyślnie wyłaczony
             max_age_secs: 10.0, // Domyślnie 10 sekund
             range_step: 20.0,   // Domyślnie
@@ -318,6 +322,7 @@ impl eframe::App for CanvasApp {
         // Zmienna, w której zapiszemy tekst statusu kursora
         let mut cursor_status = "X -, Y -".to_string();
         let mut cursor_polar = "R -, Beta -".to_string();
+        let mut cursor_geo = "LAT -, LON -".to_string();
 
         ui.add_space(5.0); // Margines górny: odsuwa cały wiersz o 5px od samej góry okna 
 
@@ -413,6 +418,8 @@ impl eframe::App for CanvasApp {
             ui.checkbox(&mut self.show_labels, "Etykiety");
             ui.separator();
             ui.checkbox(&mut self.show_beta, "Pałka");
+            ui.separator();
+            ui.checkbox(&mut self.show_geo_grid, "Geo");
             ui.separator();
             ui.checkbox(&mut self.show_debug, "Debug");
             ui.separator();
@@ -534,6 +541,95 @@ impl eframe::App for CanvasApp {
                         // Wybieramy styl linii: co piąty krok jest wyróżniony
                         let stroke = if r % 5 == 0 { major_stroke } else { minor_stroke };
                         painter.circle_stroke(center_pos, pixel_radius, stroke);
+                    }
+                }
+
+                // Rysowanie siatki geograficznej ==================================================
+                if self.show_geo_grid {
+                    let geo_stroke = egui::Stroke::new(0.5_f32, egui::Color32::from_rgb(55, 95, 130));
+                    let geo_text_color = egui::Color32::from_rgb(110, 175, 230);
+                    let geo_font = egui::FontId::monospace(9.0);
+
+                    // Wyznaczamy zapas stopni wokół środka na podstawie widocznego zasięgu
+                    let min_vis_x = (rect.min.x - center_pos.x) / scale;
+                    let max_vis_x = (rect.max.x - center_pos.x) / scale;
+                    let min_vis_y = (center_pos.y - rect.max.y) / scale;
+                    let max_vis_y = (center_pos.y - rect.min.y) / scale;
+                    let max_vis_km = min_vis_x.abs().max(max_vis_x.abs()).max(min_vis_y.abs()).max(max_vis_y.abs());
+                    let deg_span_lat = (max_vis_km / 111.0).ceil() as i32 + 2;
+                    let deg_span_lon = (max_vis_km / 60.0).ceil() as i32 + 3;
+
+                    let min_lat = (CENTER_LAT_DEG as i32 - deg_span_lat).max(-85);
+                    let max_lat = (CENTER_LAT_DEG as i32 + deg_span_lat).min(85);
+                    let min_lon = CENTER_LON_DEG as i32 - deg_span_lon;
+                    let max_lon = CENTER_LON_DEG as i32 + deg_span_lon;
+
+                    // Rysujemy POŁUDNIKI (zbieżne ku górze!)
+                    for lon in min_lon..=max_lon {
+                        let mut line_points = Vec::new();
+                        let steps = ((max_lat - min_lat) * 4).max(4);
+
+                        for s in 0..=steps {
+                            let lat = min_lat as f32 + (s as f32 * 0.25);
+                            let math_pos = geo_to_canvas(lat, lon as f32);
+                            let screen_pos = egui::pos2(
+                                center_pos.x + math_pos.x * scale,
+                                center_pos.y - math_pos.y * scale,
+                            );
+                            line_points.push(screen_pos);
+                        }
+
+                        if line_points.len() >= 2 {
+                            painter.add(egui::Shape::line(line_points, geo_stroke));
+                        }
+
+                        // Etykieta południka na równoleżniku bazowym (lub przy górnej krawędzi widoku)
+                        let label_math = geo_to_canvas(CENTER_LAT_DEG, lon as f32);
+                        let label_px_x = center_pos.x + label_math.x * scale;
+                        if label_px_x >= rect.min.x && label_px_x <= rect.max.x {
+                            let dir = if lon >= 0 { "E" } else { "W" };
+                            painter.text(
+                                egui::pos2(label_px_x + 3.0, rect.min.y + 4.0),
+                                egui::Align2::LEFT_TOP,
+                                format!("{}°{}", lon.abs(), dir),
+                                geo_font.clone(),
+                                geo_text_color,
+                            );
+                        }
+                    }
+
+                    // Rysujemy RÓWNOLEŻNIKI (lekko wygięte łuki)
+                    for lat in min_lat..=max_lat {
+                        let mut line_points = Vec::new();
+                        let steps = ((max_lon - min_lon) * 4).max(4);
+
+                        for s in 0..=steps {
+                            let lon = min_lon as f32 + (s as f32 * 0.25);
+                            let math_pos = geo_to_canvas(lat as f32, lon);
+                            let screen_pos = egui::pos2(
+                                center_pos.x + math_pos.x * scale,
+                                center_pos.y - math_pos.y * scale,
+                            );
+                            line_points.push(screen_pos);
+                        }
+
+                        if line_points.len() >= 2 {
+                            painter.add(egui::Shape::line(line_points, geo_stroke));
+                        }
+
+                        // Etykieta równoleżnika na południku bazowym przy lewej krawędzi
+                        let label_math = geo_to_canvas(lat as f32, CENTER_LON_DEG);
+                        let label_px_y = center_pos.y - label_math.y * scale;
+                        if label_px_y >= rect.min.y && label_px_y <= rect.max.y {
+                            let dir = if lat >= 0 { "N" } else { "S" };
+                            painter.text(
+                                egui::pos2(rect.min.x + 4.0, label_px_y - 2.0),
+                                egui::Align2::LEFT_BOTTOM,
+                                format!("{}°{}", lat.abs(), dir),
+                                geo_font.clone(),
+                                geo_text_color,
+                            );
+                        }
                     }
                 }
 
@@ -728,6 +824,8 @@ impl eframe::App for CanvasApp {
                         cursor_status = format!("X {:.1}km, Y {:.1}km", mat_x, mat_y);
                         let (r, beta_rad) = kartezjanskie_na_azymut(mat_x, mat_y);
                         cursor_polar = format!("R {:.1}km, Beta {:.1}°", r, beta_rad.to_degrees());
+                        let (lat, lon) = canvas_to_geo(mat_x, mat_y);
+                        cursor_geo = format!("LAT {:.3}°, LON {:.3}°", lat, lon);
                     }
                 }
             });
@@ -750,7 +848,8 @@ impl eframe::App for CanvasApp {
             ui.label(egui::RichText::new(cursor_status).monospace());
             ui.separator();
             ui.label(egui::RichText::new(cursor_polar).monospace());
-
+            ui.separator();
+            ui.label(egui::RichText::new(cursor_geo).monospace());
 
             // Kontener dla elementów po prawej stronie
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
