@@ -233,7 +233,7 @@ impl CanvasApp {
                         let x = (250000.0 * angle.sin()) as i32;
                         let y = (250000.0 * angle.cos()) as i32;
                         send_point(&socket, x, y);
-                        thread::sleep(Duration::from_secs_f32(0.25));
+                        thread::sleep(Duration::from_secs_f32(0.0390625));
                     }
                     _ => {
                         // 0. Wyłączony - wątek nic nie wysyła i czeka
@@ -586,8 +586,13 @@ impl eframe::App for CanvasApp {
                         let val = i as f32 * self.range_step;
                         let px_x = center_pos.x + (val * scale);
                         
+                        let mut offset = 4.0; 
+                        if val < 0.0 {
+                            offset = -12.0;
+                        }
+
                         painter.text(
-                            egui::pos2(px_x, center_pos.y + 4.0),
+                            egui::pos2(px_x, center_pos.y + offset),
                             egui::Align2::CENTER_TOP,
                             format!("{:.0}", val),
                             label_font.clone(),
@@ -601,8 +606,13 @@ impl eframe::App for CanvasApp {
                         let val = i as f32 * self.range_step;
                         let px_y = center_pos.y - (val * scale);
                         
+                        let mut offset = 4.0; 
+                        if val < 0.0 {
+                            offset = -25.0;
+                        }
+
                         painter.text(
-                            egui::pos2(center_pos.x + 5.0, px_y),
+                            egui::pos2(center_pos.x + offset, px_y),
                             egui::Align2::LEFT_CENTER,
                             format!("{:.0}", val),
                             label_font.clone(),
