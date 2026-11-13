@@ -17,7 +17,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::f32::consts::{PI,TAU};
 use eframe::egui::{Color32, RichText};
-
+use ureq::tls::{TlsConfig, TlsProvider};
+use ureq::Agent;
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(u8)]
@@ -47,9 +48,19 @@ impl SimMode {
     }
 }
 
+#[derive(Clone, Debug)]
+struct Aircraft {
+    icao24: String,
+    callsign: String,
+    lat: f32,
+    lon: f32,
+    heading: f32,
+}
+
 enum UdpMessage {
-    Point(f32, f32),
-    Beta(u8),
+    Point(f32, f32),             // komunikat z punktem wykrycia
+    Beta(u8),                    // komunikat z pałką azymutalną
+    AircraftList(Vec<Aircraft>), // komunikat z listą samolotów
 }
 
 struct CanvasApp {
@@ -83,6 +94,9 @@ struct CanvasApp {
     deg_v: i32,
     // Zoom
     zoom: f32,
+    // OpenSky
+    aircrafts: Vec<Aircraft>,
+    show_aircraft: bool,
 }
 
 fn send_point(socket: &UdpSocket, x: i32, y: i32) {
@@ -116,6 +130,10 @@ impl CanvasApp {
         let (tx, rx) = std::sync::mpsc::channel::<UdpMessage>();
         // W egui klonujemy egui_ctx bezpośrednio z CreationContext
         let ctx = cc.egui_ctx.clone();
+
+        // Dla wątku OpenSky
+        let tx_opensky = tx.clone();
+        let ctx_opensky = cc.egui_ctx.clone();
 
         // Wątek odbioru danych
         thread::spawn(move || {
@@ -265,6 +283,83 @@ impl CanvasApp {
             }
         });
 
+        // Wątek pobierający na żywo ruch lotniczy z OpenSky Network API
+        thread::spawn(move || {
+            let config = Agent::config_builder()
+                .tls_config(
+                    TlsConfig::builder()
+                        .provider(TlsProvider::NativeTls)
+                        .build()
+                )
+                .build();
+
+            let agent: Agent = config.into();
+
+            // Obszar obejmujący ok. 500 km wokół (50.0N, 20.0E)
+            let url = "https://opensky-network.org/api/states/all?lamin=49.0000&lomin=19.0000&lamax=53.0000&lomax=22.0000";
+
+            loop {
+
+                // Używamy skonfigurowanego agenta zamiast ureq::get(url)
+                match agent.get(url).call() {
+                    Ok(mut response) => {
+                        println!("tu 1");
+                        if let Ok(json_str) = response.body_mut().read_to_string() {
+                            if let Ok(json_str) = response.body_mut().read_to_string() {
+                                println!("tu 2 {}",json_str);
+                                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                                    println!("tu 3");
+                                    let mut list = Vec::new();
+
+                                    if let Some(states) = parsed["states"].as_array() {
+                                        for state in states {
+                                            // Wyciągamy pozycję (indeks 5 = lon, 6 = lat)
+                                            let lon = state[5].as_f64();
+                                            let lat = state[6].as_f64();
+
+                                            if let (Some(lon_val), Some(lat_val)) = (lon, lat) {
+                                                let icao24 = state[0].as_str().unwrap_or("").trim().to_string();
+                                                //let callsign = state[1].as_str().unwrap_or("").trim().to_string();
+                                                let heading = state[10].as_f64().unwrap_or(0.0) as f32;
+
+                                                //let icao24 = state[0].as_str().unwrap_or("").trim().to_string();
+                                                let raw_callsign = state[1].as_str().unwrap_or("").trim().to_string();
+
+                                                // Najpierw ustalamy finalny callsign (tutaj icao24 jest jeszcze na swoim miejscu)
+                                                let callsign = if raw_callsign.is_empty() {
+                                                    icao24.clone()
+                                                } else {
+                                                    raw_callsign
+                                                };
+
+                                                list.push(Aircraft {
+                                                    icao24,
+                                                    callsign,
+                                                    lat: lat_val as f32,
+                                                    lon: lon_val as f32,
+                                                    heading,
+                                                });
+                                            }
+                                        }
+                                    }
+
+                                    let _ = tx_opensky.send(UdpMessage::AircraftList(list));
+                                    ctx_opensky.request_repaint();
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Błąd pobierania danych z OpenSky API: {:?}", e);
+                    }
+                }
+
+                // Odstęp 12 sekund (bezpieczny dla darmowego, anonimowego limitu OpenSky API)
+                thread::sleep(Duration::from_secs(12));
+            }
+        });
+
+
         Self {
             rx,
             beta: 0,
@@ -276,6 +371,7 @@ impl CanvasApp {
             show_labels: false, // Domyślnie etykiety są niewidoczne
             show_beta: true,    // Domyślnie pałka włączona
             show_geo_grid: false,
+            show_aircraft: false,
             show_debug: false,  // Domyślnie wyłaczony
             max_age_secs: 10.0, // Domyślnie 10 sekund
             range_step: 20.0,   // Domyślnie
@@ -283,6 +379,7 @@ impl CanvasApp {
             shared_sim_mode,
             deg_v: 30,          // Domyślnie 30deg
             zoom: 1.0,
+            aircrafts: Vec::new(),
         }
     }
 }
@@ -307,6 +404,9 @@ impl eframe::App for CanvasApp {
                 UdpMessage::Beta(b) => {
                     self.beta = b;
                     self.shared_beta.store(b, Ordering::Relaxed);
+                }
+                UdpMessage::AircraftList(list) => {
+                    self.aircrafts = list;
                 }
             }
         }
@@ -420,6 +520,8 @@ impl eframe::App for CanvasApp {
             ui.checkbox(&mut self.show_beta, "Pałka");
             ui.separator();
             ui.checkbox(&mut self.show_geo_grid, "Geo");
+            ui.separator();
+            ui.checkbox(&mut self.show_aircraft, format!("Samoloty ({})", self.aircrafts.len()));
             ui.separator();
             ui.checkbox(&mut self.show_debug, "Debug");
             ui.separator();
@@ -722,7 +824,7 @@ impl eframe::App for CanvasApp {
                     }
                 }
 
-                // Rysowanie i skalowanie punktów wykryć + blednięcie ==============================
+                // Rysowanie i skalowanie punktów wykryć + blednięcie ============================== WYKRYCIA
                 // Rysowanie punktów z użyciem dynamicznego czasu max_age_secs
                 for (id, point, timestamp) in &self.points {
                     let elapsed_secs = timestamp.elapsed().as_secs_f32();
@@ -776,6 +878,42 @@ impl eframe::App for CanvasApp {
                         }
                     }
                 }
+
+                // ---- RYSOWANIE SAMOLOTÓW Z OPENSKY NETWORK ----
+                if self.show_aircraft {
+                    let ac_color = egui::Color32::from_rgb(255, 200, 50); // Złoto-żółty kolor radarowy
+                    let ac_font = egui::FontId::monospace(10.0);
+
+                    for ac in &self.aircrafts {
+                        // Przeliczamy współrzędne geograficzne samolotu na km na kanwie (z uwzględnieniem krzywizny!)
+                        let math_pos = geo_to_canvas(ac.lat, ac.lon);
+                        let global_pos = egui::pos2(
+                            center_pos.x + math_pos.x * scale,
+                            center_pos.y - math_pos.y * scale,
+                        );
+
+                        if rect.contains(global_pos) {
+                            // Rysujemy symbol samolotu (kółko + kreska kierunku lotu)
+                            painter.circle_stroke(global_pos, 4.0, egui::Stroke::new(1.5, ac_color));
+
+                            let rad = ac.heading.to_radians();
+                            let dir_vec = egui::vec2(rad.sin(), -rad.cos()) * 12.0;
+                            painter.line_segment([global_pos, global_pos + dir_vec], egui::Stroke::new(1.5, ac_color));
+
+                            // Podpis (Callsign) jeśli włączone są etykiety
+                            if self.show_labels {
+                                painter.text(
+                                    global_pos + egui::vec2(7.0, -5.0),
+                                    egui::Align2::LEFT_BOTTOM,
+                                    &ac.callsign,
+                                    ac_font.clone(),
+                                    ac_color,
+                                );
+                            }
+                        }
+                    }
+                }
+
 
                 //Teksty ===========================================================================
                 if self.show_debug {
